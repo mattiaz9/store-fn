@@ -28,10 +28,10 @@ export async function downloadStoreFromCloud() {
   }
 }
 
-export function mapVirtualProduct(
-  product: ProductCreateDefinition<any> & { virtual: true },
-): Product {
+export function mapVirtualProduct({ virtual, ...product }: ProductCreateDefinition<any>): Product {
+  const productId = product.metadata.key as string
   return {
+    id: productId,
     ...product,
     description: product.description ?? "",
     metadata: product.metadata ?? {},
@@ -74,7 +74,7 @@ export function mapVirtualProduct(
             recurringInterval: null,
             amountType: "free",
             isArchived: false,
-            productId: product.id,
+            productId,
             createdAt: new Date(),
             modifiedAt: null,
             source: "catalog",
@@ -88,7 +88,7 @@ export function mapVirtualProduct(
             priceAmount: price.priceAmount,
             priceCurrency: price.priceCurrency ?? "usd",
             isArchived: false,
-            productId: product.id,
+            productId,
             createdAt: new Date(),
             modifiedAt: null,
             source: "catalog",
@@ -103,7 +103,7 @@ export function mapVirtualProduct(
             minimumAmount: price.minimumAmount ?? 0,
             maximumAmount: price.maximumAmount ?? 0,
             priceCurrency: price.priceCurrency ?? "usd",
-            productId: product.id,
+            productId,
             isArchived: false,
             createdAt: new Date(),
             modifiedAt: null,
@@ -122,7 +122,7 @@ export function mapVirtualProduct(
               name: "usage base",
             },
             meterId: crypto.randomUUID(),
-            productId: product.id,
+            productId,
             unitAmount: "1",
             isArchived: false,
             createdAt: new Date(),
@@ -137,7 +137,7 @@ export function mapVirtualProduct(
             amountType: price.amountType,
             priceCurrency: price.priceCurrency ?? "usd",
             seatTiers: price.seatTiers,
-            productId: product.id,
+            productId,
             createdAt: new Date(),
             modifiedAt: null,
             source: "catalog",

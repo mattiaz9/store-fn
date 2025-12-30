@@ -76,12 +76,12 @@ function createStoreFn(options: CreateStoreFnOptions) {
         })
         updatedProducts.push(updatedProduct)
 
-        console.log(pc.green(`Updated product ${pc.bold(product.name)}`))
+        console.log(pc.green(`Updated product '${pc.bold(product.name)}'`))
       } else {
         const createdProduct = await polarClient.products.create(product)
         updatedProducts.push(createdProduct)
 
-        console.log(pc.green(`Created new product ${pc.bold(product.name)}`))
+        console.log(pc.cyan(`Created new product '${pc.bold(product.name)}'`))
       }
     }
 

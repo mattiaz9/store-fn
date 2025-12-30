@@ -8,7 +8,7 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     splitting: false,
-    external: ["@polar-sh/sdk", "prettier"],
+    external: ["@polar-sh/sdk"],
   },
   {
     entry: ["src/cli.ts"],
@@ -16,7 +16,7 @@ export default defineConfig([
     sourcemap: false,
     clean: true,
     splitting: false,
-    external: ["@polar-sh/sdk", "prettier"],
+    external: ["@polar-sh/sdk", "prettier", "typescript", "tsx"],
     banner: {
       js: "#!/usr/bin/env node",
     },

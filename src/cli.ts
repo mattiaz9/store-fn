@@ -1,7 +1,8 @@
-#!/usr/bin/env node
-
 import pc from "picocolors"
-import { resolve } from "path"
+import { resolve, join as pathJoin } from "path"
+import dotenv from "dotenv"
+import dotenvExpand from "dotenv-expand"
+import fs from "fs"
 import { writeProductsToFile } from "./lib.js"
 
 async function main() {
@@ -18,6 +19,8 @@ async function main() {
     console.log("  store-fn push  # Uses defaults: -i store.config.ts -o store/products.ts")
     process.exit(1)
   }
+
+  loadEnv()
 
   if (command === "push") {
     await handlePush(args.slice(1))
@@ -53,33 +56,28 @@ async function handlePush(args: string[]) {
     const inputFilePath = resolve(process.cwd(), inputFile)
     const outputFilePath = resolve(process.cwd(), outputFile)
 
-    console.log(pc.blue(`Loading store definition from: ${inputFilePath}`))
+    console.log(pc.gray(`Loading store definition from: ${inputFilePath}`))
 
-    // Convert file path to file:// URL for ESM imports
+    // Check if it's a TypeScript file
+    const isTypeScript = inputFilePath.endsWith(".ts") || inputFilePath.endsWith(".tsx")
+
+    let storeModule: any
+
+    if (isTypeScript) {
+      // Register TS runtime (only once)
+      // @ts-ignore
+      await import("tsx/esm")
+    }
+
+    // Handle JavaScript files normally
     const resolvedInputPath = resolve(inputFilePath)
     const storeFileUrl = resolvedInputPath.startsWith("file://")
       ? resolvedInputPath
       : `file://${resolvedInputPath}`
 
-    // Import the store file
-    // Note: For TypeScript files, use tsx to run this CLI (tsx will handle the imports)
-    let storeModule: any
     try {
-      // Try importing as-is first (works for JS files or when using tsx)
       storeModule = await import(storeFileUrl)
     } catch (error: any) {
-      // If it's a TypeScript file and we're not using tsx, try with .ts extension
-      if (
-        (error.code === "ERR_UNKNOWN_FILE_EXTENSION" ||
-          error.message?.includes("Unknown file extension")) &&
-        inputFilePath.endsWith(".ts")
-      ) {
-        throw new Error(
-          `Cannot load TypeScript file: ${inputFilePath}\n` +
-            `Please run this CLI using tsx: tsx src/cli.ts push -i ${inputFile} -o ${outputFile}\n` +
-            `Or compile your store file to JavaScript first.`,
-        )
-      }
       if (error.code === "ERR_MODULE_NOT_FOUND" || error.code === "ENOENT") {
         throw new Error(
           `Store file not found: ${inputFilePath}\nMake sure the file exists and the path is correct.`,
@@ -87,7 +85,7 @@ async function handlePush(args: string[]) {
       }
       if (error.message?.includes("Cannot find module")) {
         throw new Error(
-          `Cannot load store file: ${inputFilePath}\nIf it's a TypeScript file, make sure you're using tsx to run the CLI or compile it first.`,
+          `Cannot load store file: ${inputFilePath}\nMake sure the file exists and the path is correct.`,
         )
       }
       throw error
@@ -108,7 +106,7 @@ async function handlePush(args: string[]) {
       )
     }
 
-    console.log(pc.blue("Syncing products to Polar store...\n"))
+    console.log(pc.gray("Syncing products to Polar store...\n"))
 
     // Call push to sync the store
     const result = await store.push()
@@ -126,18 +124,39 @@ async function handlePush(args: string[]) {
       return
     }
 
-    console.log(pc.blue(`\nWriting ${products.length} product(s) to: ${outputFilePath}`))
+    console.log(pc.gray(`Writing ${products.length} product(s) to: ${outputFilePath}`))
 
     // Write products to the output file
     await writeProductsToFile(products, outputFilePath)
 
-    console.log(pc.green(`\n✓ Successfully wrote products to ${outputFilePath}`))
+    console.log(pc.green(`✓ Successfully wrote products to ${outputFilePath}`))
   } catch (error: any) {
     console.error(pc.red(`\nError: ${error.message}`))
     if (error.stack && process.env.DEBUG) {
       console.error(error.stack)
     }
     process.exit(1)
+  }
+}
+
+function loadEnv() {
+  const envFiles = [
+    ".env",
+    ".env.local",
+    `.env.${process.env.NODE_ENV ?? "development"}`,
+    `.env.${process.env.NODE_ENV ?? "development"}.local`,
+  ]
+
+  for (const file of envFiles) {
+    const fullPath = pathJoin(process.cwd(), file)
+    if (!fs.existsSync(fullPath)) continue
+
+    const env = dotenv.config({
+      path: fullPath,
+      override: false,
+    })
+
+    dotenvExpand.expand(env)
   }
 }
 
