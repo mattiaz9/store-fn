@@ -8,8 +8,12 @@ src
 tests
 
 # config files
-.prettierrc
+.env*
 pnpm-lock.yaml
 tsconfig.json
+prettier.config.ts
 tsup.config.ts
 vitest.config.ts
+
+# other
+TESTING.md
