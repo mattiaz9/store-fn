@@ -29,7 +29,7 @@ describe("store-fn", () => {
       server: "sandbox",
     })
 
-    // Initialize global variables that sync() uses
+    // Initialize global variables that push() uses
     globalThis.polarClient = polarClient
     globalThis.polarOrganizationId = POLAR_ORGANIZATION_ID
 
@@ -187,7 +187,7 @@ describe("store-fn", () => {
     })
   })
 
-  describe("sync", () => {
+  describe("push", () => {
     it("should create a new product in Polar", async () => {
       const uniqueKey = `test-sync-create-${Date.now()}`
       store.defineProduct({
@@ -203,7 +203,7 @@ describe("store-fn", () => {
         ],
       })
 
-      await store.sync()
+      await store.push()
 
       // Download all products from Polar to verify sync
       const products = await fetchPolarIterator(
@@ -246,7 +246,7 @@ describe("store-fn", () => {
         ],
       })
 
-      await store.sync()
+      await store.push()
 
       // Download products to verify creation
       let products = await fetchPolarIterator(
@@ -285,7 +285,7 @@ describe("store-fn", () => {
         ],
       })
 
-      await store.sync()
+      await store.push()
 
       // Download products again to verify update
       products = await fetchPolarIterator(
@@ -326,7 +326,7 @@ describe("store-fn", () => {
         ],
       })
 
-      await store.sync()
+      await store.push()
 
       // Download all products from Polar to verify virtual products are NOT synced
       const products = await fetchPolarIterator(
@@ -355,7 +355,7 @@ describe("store-fn", () => {
         ],
       })
 
-      await store.sync()
+      await store.push()
 
       // Download all products from Polar to verify sync
       const products = await fetchPolarIterator(

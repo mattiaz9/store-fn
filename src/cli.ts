@@ -102,20 +102,20 @@ async function handlePush(args: string[]) {
       )
     }
 
-    if (typeof store.sync !== "function") {
+    if (typeof store.push !== "function") {
       throw new Error(
-        "Store default export must be the return value of createStoreFn (an object with a sync function)",
+        "Store default export must be the return value of createStoreFn (an object with a push function)",
       )
     }
 
     console.log(pc.blue("Syncing products to Polar store...\n"))
 
-    // Call sync to sync the store
-    const result = await store.sync()
+    // Call push to sync the store
+    const result = await store.push()
 
     if (!result || !result.updatedProducts) {
       throw new Error(
-        "Sync function did not return products. Expected { updatedProducts: Product[] }",
+        "Push function did not return products. Expected { updatedProducts: Product[] }",
       )
     }
 

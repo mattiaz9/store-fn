@@ -164,10 +164,10 @@ export default store
     }
   })
 
-  it("should handle store file without sync function", async () => {
-    // Create a store file with default export but no sync function
-    const invalidStoreFile = resolve(process.cwd(), "tests", "test-store-no-sync.ts")
-    await writeFile(invalidStoreFile, `export default { notSync: () => {} }`, "utf-8")
+  it("should handle store file without push function", async () => {
+    // Create a store file with default export but no push function
+    const invalidStoreFile = resolve(process.cwd(), "tests", "test-store-no-push.ts")
+    await writeFile(invalidStoreFile, `export default { notPush: () => {} }`, "utf-8")
 
     try {
       try {

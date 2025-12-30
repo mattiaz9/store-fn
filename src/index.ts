@@ -46,7 +46,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
     return definition
   }
 
-  async function sync() {
+  async function push() {
     globalThis.polarClient = options.client
     globalThis.polarOrganizationId = options.organizationId
 
@@ -95,7 +95,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
     }
   }
 
-  return { defineProduct, sync }
+  return { defineProduct, push }
 }
 
 export { createStoreFn, writeProductsToFile }

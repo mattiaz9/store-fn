@@ -59,7 +59,7 @@ You can sync products programmatically or using the CLI.
 import store from "./store.config.js"
 
 // Sync all defined products to Polar
-const result = await store.sync()
+const result = await store.push()
 console.log(`Synced ${result.updatedProducts.length} products`)
 ```
 
@@ -80,7 +80,7 @@ Creates a store instance for defining and syncing products.
 - `options.client` - A Polar SDK client instance
 - `options.organizationId` - Your Polar organization ID
 
-**Returns:** An object with `defineProduct` and `sync` methods
+**Returns:** An object with `defineProduct` and `push` methods
 
 ### `store.defineProduct(definition)`
 
@@ -99,7 +99,7 @@ Defines a product. Products are identified by their `key` in metadata.
 
 **Returns:** The product definition (with prices converted to cents)
 
-### `store.sync()`
+### `store.push()`
 
 Syncs all defined products to Polar. Creates new products or updates existing ones based on the `key` in metadata.
 
