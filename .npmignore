@@ -1,0 +1,15 @@
+# folders
+.github
+.vscode
+node_modules
+
+# codebase
+src
+tests
+
+# config files
+.prettierrc
+pnpm-lock.yaml
+tsconfig.json
+tsup.config.ts
+vitest.config.ts
