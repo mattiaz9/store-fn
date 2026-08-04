@@ -1,4 +1,4 @@
-import { Polar } from "@polar-sh/sdk"
+import type { Polar } from "@polar-sh/sdk"
 
 declare global {
   var polarClient: Polar

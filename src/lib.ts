@@ -1,14 +1,18 @@
-import { Product } from "@polar-sh/sdk/models/components/product.js"
-import { ProductPriceCustom } from "@polar-sh/sdk/models/components/productpricecustom.js"
-import { ProductPriceFixed } from "@polar-sh/sdk/models/components/productpricefixed.js"
-import { ProductPriceFree } from "@polar-sh/sdk/models/components/productpricefree.js"
-import { ProductPriceMeteredUnit } from "@polar-sh/sdk/models/components/productpricemeteredunit.js"
-import { ProductPriceSeatBased } from "@polar-sh/sdk/models/components/productpriceseatbased.js"
-import { SubscriptionRecurringInterval } from "@polar-sh/sdk/models/components/subscriptionrecurringinterval.js"
+import type { Product } from "@polar-sh/sdk/models/components/product.js"
+import type { ProductPrice } from "@polar-sh/sdk/models/components/productprice.js"
+import type { ProductPriceCustom } from "@polar-sh/sdk/models/components/productpricecustom.js"
+import type { ProductPriceFixed } from "@polar-sh/sdk/models/components/productpricefixed.js"
+import type { ProductPriceMeteredUnit } from "@polar-sh/sdk/models/components/productpricemeteredunit.js"
+import type { ProductPriceSeatBased } from "@polar-sh/sdk/models/components/productpriceseatbased.js"
+import type { ProductPriceSeatTiersInput } from "@polar-sh/sdk/models/components/productpriceseattiersinput.js"
+import type { ProductPriceSeatTiersOutput } from "@polar-sh/sdk/models/components/productpriceseattiersoutput.js"
+import type { RecurringInterval } from "@polar-sh/sdk/models/components/recurringinterval.js"
 import type { Options as PrettierOptions } from "prettier"
 
-import { ProductCreateDefinition } from "./types"
+import type { ProductCreateDefinition } from "./types"
 import { fetchPolarIterator, toCamelCase } from "./utils"
+
+type VirtualProductDefinition = ProductCreateDefinition
 
 export async function downloadStoreFromCloud() {
   const [products, benefits] = await Promise.all([
@@ -30,11 +34,26 @@ export async function downloadStoreFromCloud() {
   }
 }
 
-export function mapVirtualProduct({ virtual, ...product }: ProductCreateDefinition<any>): Product {
-  const productId = product.metadata.key as string
+function toSeatTiersOutput(seatTiers: ProductPriceSeatTiersInput): ProductPriceSeatTiersOutput {
+  const firstTier = seatTiers.tiers[0]
+  const lastTier = seatTiers.tiers[seatTiers.tiers.length - 1]
+
   return {
-    id: productId,
+    ...seatTiers,
+    minimumSeats: firstTier?.minSeats ?? 1,
+    maximumSeats: lastTier?.maxSeats ?? null,
+  }
+}
+
+export function mapVirtualProduct({
+  virtual: _virtual,
+  id,
+  ...product
+}: VirtualProductDefinition): Product {
+  const productId = id ?? String(product.metadata.key)
+  return {
     ...product,
+    id: productId,
     description: product.description ?? "",
     metadata: product.metadata ?? {},
     isRecurring: !!product.recurringInterval,
@@ -65,30 +84,21 @@ export function mapVirtualProduct({ virtual, ...product }: ProductCreateDefiniti
     isArchived: false,
     trialInterval: null,
     trialIntervalCount: null,
-    recurringInterval: (product.recurringInterval ?? null) as SubscriptionRecurringInterval | null,
+    visibility: product.visibility ?? "public",
+    recurringInterval: (product.recurringInterval ?? null) as RecurringInterval | null,
     recurringIntervalCount: (product.recurringIntervalCount ?? null) as number | null,
-    prices: product.prices.map((price) => {
+    meterInterval: "meterInterval" in product ? (product.meterInterval ?? null) : null,
+    meterIntervalCount:
+      "meterIntervalCount" in product ? (product.meterIntervalCount ?? null) : null,
+    prices: product.prices.map((price): ProductPrice => {
       switch (price.amountType) {
-        case "free":
-          return {
-            id: crypto.randomUUID(),
-            type: product.recurringInterval ? "recurring" : "one_time",
-            recurringInterval: null,
-            amountType: "free",
-            isArchived: false,
-            productId,
-            createdAt: new Date(),
-            modifiedAt: null,
-            source: "catalog",
-          } satisfies ProductPriceFree
         case "fixed":
           return {
             id: crypto.randomUUID(),
-            type: product.recurringInterval ? "recurring" : "one_time",
-            recurringInterval: null,
             amountType: price.amountType,
             priceAmount: price.priceAmount,
             priceCurrency: price.priceCurrency ?? "usd",
+            taxBehavior: price.taxBehavior ?? null,
             isArchived: false,
             productId,
             createdAt: new Date(),
@@ -98,13 +108,12 @@ export function mapVirtualProduct({ virtual, ...product }: ProductCreateDefiniti
         case "custom":
           return {
             id: crypto.randomUUID(),
-            type: product.recurringInterval ? "recurring" : "one_time",
-            recurringInterval: null,
             amountType: price.amountType,
             presetAmount: price.presetAmount ?? 0,
             minimumAmount: price.minimumAmount ?? 0,
             maximumAmount: price.maximumAmount ?? 0,
             priceCurrency: price.priceCurrency ?? "usd",
+            taxBehavior: price.taxBehavior ?? null,
             productId,
             isArchived: false,
             createdAt: new Date(),
@@ -114,14 +123,16 @@ export function mapVirtualProduct({ virtual, ...product }: ProductCreateDefiniti
         case "metered_unit":
           return {
             id: crypto.randomUUID(),
-            type: product.recurringInterval ? "recurring" : "one_time",
-            recurringInterval: null,
             amountType: price.amountType,
             capAmount: price.capAmount ?? null,
             priceCurrency: price.priceCurrency ?? "usd",
+            taxBehavior: price.taxBehavior ?? null,
             meter: {
               id: crypto.randomUUID(),
               name: "usage base",
+              unit: "scalar",
+              customLabel: null,
+              customMultiplier: null,
             },
             meterId: crypto.randomUUID(),
             productId,
@@ -134,11 +145,10 @@ export function mapVirtualProduct({ virtual, ...product }: ProductCreateDefiniti
         case "seat_based":
           return {
             id: crypto.randomUUID(),
-            type: product.recurringInterval ? "recurring" : "one_time",
-            recurringInterval: null,
             amountType: price.amountType,
             priceCurrency: price.priceCurrency ?? "usd",
-            seatTiers: price.seatTiers,
+            taxBehavior: price.taxBehavior ?? null,
+            seatTiers: toSeatTiersOutput(price.seatTiers),
             productId,
             createdAt: new Date(),
             modifiedAt: null,

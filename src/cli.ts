@@ -1,10 +1,20 @@
 import fs from "fs"
 import { resolve, join as pathJoin } from "path"
+import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import dotenv from "dotenv"
 import dotenvExpand from "dotenv-expand"
 import pc from "picocolors"
 
 import { writeProductsToFile } from "./lib.js"
+import { getErrorCode, getErrorMessage, getErrorStack } from "./utils.js"
+
+type StorePushResult = {
+  updatedProducts: Product[]
+}
+
+type StoreExport = {
+  push: () => Promise<StorePushResult>
+}
 
 async function main() {
   const args = process.argv.slice(2)
@@ -31,6 +41,13 @@ async function main() {
     console.log("  push    Sync products to Polar store")
     process.exit(1)
   }
+}
+
+function isStoreExport(value: unknown): value is StoreExport {
+  if (typeof value !== "object" || value === null || !("push" in value)) {
+    return false
+  }
+  return typeof value.push === "function"
 }
 
 async function handlePush(args: string[]) {
@@ -62,11 +79,9 @@ async function handlePush(args: string[]) {
     // Check if it's a TypeScript file
     const isTypeScript = inputFilePath.endsWith(".ts") || inputFilePath.endsWith(".tsx")
 
-    let storeModule: any
-
     if (isTypeScript) {
       // Register TS runtime (only once)
-      // @ts-ignore
+      // @ts-expect-error -- tsx has no type declarations for the esm side-effect import
       await import("tsx/esm")
     }
 
@@ -76,15 +91,18 @@ async function handlePush(args: string[]) {
       ? resolvedInputPath
       : `file://${resolvedInputPath}`
 
+    let storeModule: { default?: unknown }
     try {
-      storeModule = await import(storeFileUrl)
-    } catch (error: any) {
-      if (error.code === "ERR_MODULE_NOT_FOUND" || error.code === "ENOENT") {
+      storeModule = (await import(storeFileUrl)) as { default?: unknown }
+    } catch (error: unknown) {
+      const code = getErrorCode(error)
+      const message = getErrorMessage(error)
+      if (code === "ERR_MODULE_NOT_FOUND" || code === "ENOENT") {
         throw new Error(
           `Store file not found: ${inputFilePath}\nMake sure the file exists and the path is correct.`,
         )
       }
-      if (error.message?.includes("Cannot find module")) {
+      if (message.includes("Cannot find module")) {
         throw new Error(
           `Cannot load store file: ${inputFilePath}\nMake sure the file exists and the path is correct.`,
         )
@@ -101,7 +119,7 @@ async function handlePush(args: string[]) {
       )
     }
 
-    if (typeof store.push !== "function") {
+    if (!isStoreExport(store)) {
       throw new Error(
         "Store default export must be the return value of createStoreFn (an object with a push function)",
       )
@@ -131,10 +149,11 @@ async function handlePush(args: string[]) {
     await writeProductsToFile(products, outputFilePath)
 
     console.log(pc.green(`✓ Successfully wrote products to ${outputFilePath}`))
-  } catch (error: any) {
-    console.error(pc.red(`\nError: ${error.message}`))
-    if (error.stack && process.env.DEBUG) {
-      console.error(error.stack)
+  } catch (error: unknown) {
+    console.error(pc.red(`\nError: ${getErrorMessage(error)}`))
+    const stack = getErrorStack(error)
+    if (stack && process.env.DEBUG) {
+      console.error(stack)
     }
     process.exit(1)
   }
@@ -161,10 +180,11 @@ function loadEnv() {
   }
 }
 
-main().catch((error) => {
-  console.error(pc.red(`Fatal error: ${error.message}`))
-  if (error.stack) {
-    console.error(error.stack)
+main().catch((error: unknown) => {
+  console.error(pc.red(`Fatal error: ${getErrorMessage(error)}`))
+  const stack = getErrorStack(error)
+  if (stack) {
+    console.error(stack)
   }
   process.exit(1)
 })

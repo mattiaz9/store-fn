@@ -1,10 +1,9 @@
-import { Polar } from "@polar-sh/sdk"
-import { Product } from "@polar-sh/sdk/models/components/product.js"
-import { ProductCreate } from "@polar-sh/sdk/models/components/productcreate.js"
+import type { Polar } from "@polar-sh/sdk"
+import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import pc from "picocolors"
 
 import { downloadStoreFromCloud, mapVirtualProduct, writeProductsToFile } from "./lib"
-import { ProductCreateDefinition, ProductDefinition } from "./types"
+import type { ProductCreateDefinition, ProductDefinition, StoreMetadata } from "./types"
 
 interface CreateStoreFnOptions {
   client: Polar
@@ -12,9 +11,9 @@ interface CreateStoreFnOptions {
 }
 
 function createStoreFn(options: CreateStoreFnOptions) {
-  let definedProducts: ProductCreateDefinition<any>[] = []
+  const definedProducts: ProductCreateDefinition[] = []
 
-  function defineProduct<TMeta extends ProductCreate["metadata"]>({
+  function defineProduct<TMeta extends StoreMetadata = StoreMetadata>({
     key,
     ...details
   }: ProductDefinition<TMeta>) {
@@ -53,7 +52,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
 
     const polarStore = await downloadStoreFromCloud()
 
-    let updatedProducts: Product[] = []
+    const updatedProducts: Product[] = []
 
     for (const product of definedProducts) {
       if (!product.metadata?.key) {
@@ -70,25 +69,27 @@ function createStoreFn(options: CreateStoreFnOptions) {
         (p) => p.metadata.key === product.metadata?.key,
       )
 
+      const { virtual: _virtual, id: _id, ...productPayload } = product
+
       if (existingProduct) {
         const updatedProduct = await polarClient.products.update({
           id: existingProduct.id,
-          productUpdate: product,
+          productUpdate: productPayload,
         })
         updatedProducts.push(updatedProduct)
 
         console.log(pc.green(`Updated product '${pc.bold(product.name)}'`))
       } else {
-        const createdProduct = await polarClient.products.create(product)
+        const createdProduct = await polarClient.products.create(productPayload)
         updatedProducts.push(createdProduct)
 
         console.log(pc.cyan(`Created new product '${pc.bold(product.name)}'`))
       }
     }
 
-    // @ts-expect-error
+    // @ts-expect-error -- clear client after sync completes
     globalThis.polarClient = undefined
-    // @ts-expect-error
+    // @ts-expect-error -- clear organization after sync completes
     globalThis.polarOrganizationId = undefined
 
     return {
@@ -99,4 +100,5 @@ function createStoreFn(options: CreateStoreFnOptions) {
   return { defineProduct, push }
 }
 
+export type { ProductCreateDefinition, ProductDefinition, StoreMetadata }
 export { createStoreFn, writeProductsToFile }

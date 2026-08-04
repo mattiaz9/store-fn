@@ -9,11 +9,14 @@ const execAsync = promisify(exec)
 
 const POLAR_API_KEY = import.meta.env.POLAR_ACCESS_TOKEN
 const POLAR_ORGANIZATION_ID = import.meta.env.POLAR_ORGANIZATION_ID
+const hasPolarEnv = Boolean(POLAR_API_KEY && POLAR_ORGANIZATION_ID)
 
-if (!POLAR_API_KEY || !POLAR_ORGANIZATION_ID) {
-  throw new Error(
-    "Missing required environment variables: POLAR_ACCESS_TOKEN or POLAR_ORGANIZATION_ID",
-  )
+function getExecOutput(error: unknown): string {
+  if (typeof error === "object" && error !== null) {
+    const { stdout, stderr } = error as { stdout?: unknown; stderr?: unknown }
+    return [stdout, stderr].filter((value): value is string => typeof value === "string").join("\n")
+  }
+  return String(error)
 }
 
 describe("store-fn cli", () => {
@@ -22,6 +25,8 @@ describe("store-fn cli", () => {
   const cliPath = resolve(process.cwd(), "src", "cli.ts")
 
   beforeAll(async () => {
+    if (!hasPolarEnv) return
+
     // Create a test store file
     const storeContent = `import { Polar } from "@polar-sh/sdk"
 import { createStoreFn } from "../src/index.js"
@@ -63,7 +68,7 @@ export default store
       if (existsSync(testOutputFile)) {
         await unlink(testOutputFile)
       }
-    } catch (error) {
+    } catch {
       // Ignore cleanup errors
     }
   })
@@ -75,8 +80,8 @@ export default store
       })
       // Should not reach here
       expect(true).toBe(false)
-    } catch (error: any) {
-      const output = [error.stdout, error.stderr].filter(Boolean).join("\n")
+    } catch (error: unknown) {
+      const output = getExecOutput(error)
       expect(output).toContain("Error: No command provided")
       expect(output).toContain("Usage: store-fn <command>")
     }
@@ -89,8 +94,8 @@ export default store
       })
       // Should not reach here
       expect(true).toBe(false)
-    } catch (error: any) {
-      const output = [error.stdout, error.stderr].filter(Boolean).join("\n")
+    } catch (error: unknown) {
+      const output = getExecOutput(error)
       expect(output).toContain('Error: Unknown command "unknown-command"')
     }
   })
@@ -102,43 +107,47 @@ export default store
       })
       // Should not reach here
       expect(true).toBe(false)
-    } catch (error: any) {
-      const output = [error.stdout, error.stderr].filter(Boolean).join("\n")
+    } catch (error: unknown) {
+      const output = getExecOutput(error)
       expect(output).toContain("Store file not found")
     }
   })
 
-  it("should successfully run push command and create output file", async () => {
-    // Ensure output file doesn't exist before test
-    if (existsSync(testOutputFile)) {
-      await unlink(testOutputFile)
-    }
+  it.skipIf(!hasPolarEnv)(
+    "should successfully run push command and create output file",
+    async () => {
+      // Ensure output file doesn't exist before test
+      if (existsSync(testOutputFile)) {
+        await unlink(testOutputFile)
+      }
 
-    const { stdout, stderr } = await execAsync(
-      `tsx ${cliPath} push -i ${testStoreFile} -o ${testOutputFile}`,
-      {
-        env: {
-          ...process.env,
-          POLAR_API_KEY: POLAR_API_KEY,
-          POLAR_ACCESS_TOKEN: POLAR_API_KEY,
-          POLAR_ORGANIZATION_ID: POLAR_ORGANIZATION_ID,
+      const { stdout } = await execAsync(
+        `tsx ${cliPath} push -i ${testStoreFile} -o ${testOutputFile}`,
+        {
+          env: {
+            ...process.env,
+            POLAR_API_KEY: POLAR_API_KEY,
+            POLAR_ACCESS_TOKEN: POLAR_API_KEY,
+            POLAR_ORGANIZATION_ID: POLAR_ORGANIZATION_ID,
+          },
         },
-      },
-    )
+      )
 
-    // Check that output file was created
-    expect(existsSync(testOutputFile)).toBe(true)
+      // Check that output file was created
+      expect(existsSync(testOutputFile)).toBe(true)
 
-    // Verify output file content
-    const outputContent = await readFile(testOutputFile, "utf-8")
-    expect(outputContent).toContain("CLI Test Product")
-    expect(outputContent).toContain("cli-test-product")
-    expect(outputContent).toContain("Product")
+      // Verify output file content
+      const outputContent = await readFile(testOutputFile, "utf-8")
+      expect(outputContent).toContain("CLI Test Product")
+      expect(outputContent).toContain("cli-test-product")
+      expect(outputContent).toContain("Product")
 
-    // Check CLI output
-    expect(stdout).toContain("Syncing products to Polar store")
-    expect(stdout).toContain("Successfully wrote products")
-  }, 30000)
+      // Check CLI output
+      expect(stdout).toContain("Syncing products to Polar store")
+      expect(stdout).toContain("Successfully wrote products")
+    },
+    30000,
+  )
 
   it("should handle store file with no default export", async () => {
     // Create a store file without default export
@@ -152,8 +161,8 @@ export default store
         })
         // Should not reach here
         expect(true).toBe(false)
-      } catch (error: any) {
-        const output = [error.stdout, error.stderr].filter(Boolean).join("\n")
+      } catch (error: unknown) {
+        const output = getExecOutput(error)
         expect(output).toContain("Store file must have a default export")
       }
     } finally {
@@ -176,8 +185,8 @@ export default store
         })
         // Should not reach here
         expect(true).toBe(false)
-      } catch (error: any) {
-        const output = [error.stdout, error.stderr].filter(Boolean).join("\n")
+      } catch (error: unknown) {
+        const output = getExecOutput(error)
         expect(output).toContain("Store default export must be the return value of createStoreFn")
       }
     } finally {

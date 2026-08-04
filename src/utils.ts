@@ -1,7 +1,7 @@
-import { Pagination } from "@polar-sh/sdk/models/components/pagination.js"
-import { Product } from "@polar-sh/sdk/models/components/product.js"
-import { ProductCreate } from "@polar-sh/sdk/models/components/productcreate.js"
-import { PageIterator } from "@polar-sh/sdk/types/operations.js"
+import type { Pagination } from "@polar-sh/sdk/models/components/pagination.js"
+import type { Product } from "@polar-sh/sdk/models/components/product.js"
+import type { ProductCreate } from "@polar-sh/sdk/models/components/productcreate.js"
+import type { PageIterator } from "@polar-sh/sdk/types/operations.js"
 
 export async function fetchPolarIterator<T>(
   iterator: Promise<
@@ -31,7 +31,7 @@ export function productMatchesProductCreate(product: Product, productCreate: Pro
   return nonStrictDeepEqual(productCreate, product)
 }
 
-function nonStrictDeepEqual(a: any, b: any): boolean {
+function nonStrictDeepEqual(a: unknown, b: unknown): boolean {
   if (a instanceof Date && typeof b === "string") {
     return a.toISOString() === b
   }
@@ -47,7 +47,7 @@ function nonStrictDeepEqual(a: any, b: any): boolean {
     return false
   }
 
-  if (Array.isArray(a)) {
+  if (Array.isArray(a) && Array.isArray(b)) {
     if (a.length !== b.length) {
       return false
     }
@@ -61,16 +61,19 @@ function nonStrictDeepEqual(a: any, b: any): boolean {
     return true
   }
 
-  if (typeof a === "object") {
-    for (const key in a) {
-      let aVal = a[key]
+  if (typeof a === "object" && a !== null && typeof b === "object" && b !== null) {
+    const aObj = a as Record<string, unknown>
+    const bObj = b as Record<string, unknown>
+
+    for (const key of Object.keys(aObj)) {
+      let aVal = aObj[key]
 
       // patch priceAmount
-      if (key === "priceAmount") {
-        aVal = Math.round(a[key] * 100)
+      if (key === "priceAmount" && typeof aVal === "number") {
+        aVal = Math.round(aVal * 100)
       }
 
-      if (!nonStrictDeepEqual(aVal, b[key])) {
+      if (!nonStrictDeepEqual(aVal, bObj[key])) {
         return false
       }
     }
@@ -78,11 +81,7 @@ function nonStrictDeepEqual(a: any, b: any): boolean {
     return true
   }
 
-  if (a !== b) {
-    return false
-  }
-
-  return true
+  return a === b
 }
 
 export function toCamelCase(str: string) {
@@ -100,4 +99,26 @@ export function toCamelCase(str: string) {
       return word
     })
     .join("")
+}
+
+export function getErrorMessage(error: unknown): string {
+  if (error instanceof Error) {
+    return error.message
+  }
+  return String(error)
+}
+
+export function getErrorStack(error: unknown): string | undefined {
+  if (error instanceof Error) {
+    return error.stack
+  }
+  return undefined
+}
+
+export function getErrorCode(error: unknown): string | undefined {
+  if (typeof error === "object" && error !== null && "code" in error) {
+    const { code } = error
+    return typeof code === "string" ? code : undefined
+  }
+  return undefined
 }

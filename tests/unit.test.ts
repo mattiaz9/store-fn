@@ -1,0 +1,313 @@
+import { mkdtemp, readFile, rm } from "fs/promises"
+import { tmpdir } from "os"
+import { join } from "path"
+import type { Polar } from "@polar-sh/sdk"
+import { afterAll, beforeAll, describe, expect, it } from "vitest"
+
+import { createStoreFn } from "../src/index.js"
+import { mapVirtualProduct, writeProductsToFile } from "../src/lib.js"
+import type { ProductCreateDefinition } from "../src/types.js"
+import {
+  getErrorCode,
+  getErrorMessage,
+  getErrorStack,
+  toCamelCase,
+} from "../src/utils.js"
+
+function stubPolarClient(): Polar {
+  return {} as Polar
+}
+
+function baseDefinition(overrides: ProductCreateDefinition): ProductCreateDefinition {
+  return {
+    virtual: true,
+    ...overrides,
+  }
+}
+
+describe("toCamelCase", () => {
+  it("converts spaced, dashed, and underscored names", () => {
+    expect(toCamelCase("CLI Test Product")).toBe("cliTestProduct")
+    expect(toCamelCase("my-product_name")).toBe("myProductName")
+    expect(toCamelCase("AlreadyCamel")).toBe("alreadycamel")
+  })
+
+  it("returns empty/falsy input unchanged", () => {
+    expect(toCamelCase("")).toBe("")
+  })
+})
+
+describe("error helpers", () => {
+  it("reads message and stack from Error instances", () => {
+    const error = new Error("boom")
+    expect(getErrorMessage(error)).toBe("boom")
+    expect(getErrorStack(error)).toContain("Error: boom")
+  })
+
+  it("stringifies non-Error values", () => {
+    expect(getErrorMessage("plain")).toBe("plain")
+    expect(getErrorMessage(42)).toBe("42")
+    expect(getErrorStack("plain")).toBeUndefined()
+  })
+
+  it("reads string error codes from objects", () => {
+    expect(getErrorCode({ code: "ENOENT" })).toBe("ENOENT")
+    expect(getErrorCode({ code: 123 })).toBeUndefined()
+    expect(getErrorCode("nope")).toBeUndefined()
+  })
+})
+
+describe("defineProduct", () => {
+  const store = createStoreFn({
+    client: stubPolarClient(),
+    organizationId: "org_test",
+  })
+
+  it("converts fixed and custom amounts to cents", () => {
+    const product = store.defineProduct({
+      key: "cents-product",
+      name: "Cents Product",
+      prices: [
+        {
+          amountType: "fixed",
+          priceAmount: 12.34,
+          priceCurrency: "usd",
+        },
+      ],
+    })
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("fixed")
+    if (price.amountType === "fixed") {
+      expect(price.priceAmount).toBe(1234)
+    }
+  })
+
+  it("converts custom price bounds to cents", () => {
+    const product = store.defineProduct({
+      key: "custom-cents",
+      name: "Custom Cents",
+      prices: [
+        {
+          amountType: "custom",
+          presetAmount: 50,
+          minimumAmount: 10,
+          maximumAmount: 100,
+          priceCurrency: "usd",
+        },
+      ],
+    })
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("custom")
+    if (price.amountType === "custom") {
+      expect(price.presetAmount).toBe(5000)
+      expect(price.minimumAmount).toBe(1000)
+      expect(price.maximumAmount).toBe(10000)
+    }
+  })
+
+  it("keeps free fixed prices at zero cents", () => {
+    const product = store.defineProduct({
+      key: "free-product",
+      name: "Free Product",
+      prices: [{ amountType: "fixed", priceAmount: 0 }],
+    })
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("fixed")
+    if (price.amountType === "fixed") {
+      expect(price.priceAmount).toBe(0)
+    }
+  })
+
+  it("stores key in metadata and preserves custom metadata", () => {
+    const product = store.defineProduct({
+      key: "meta-product",
+      name: "Meta Product",
+      prices: [{ amountType: "fixed", priceAmount: 1 }],
+      metadata: { maxUsers: 10, flagged: true },
+    })
+
+    expect(product.metadata.key).toBe("meta-product")
+    expect(product.metadata.maxUsers).toBe(10)
+    expect(product.metadata.flagged).toBe(true)
+  })
+})
+
+describe("mapVirtualProduct", () => {
+  it("uses explicit id when provided", () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        id: "virtual-explicit-id",
+        name: "Virtual Product",
+        metadata: { key: "virtual-key" },
+        prices: [{ amountType: "fixed", priceAmount: 999, priceCurrency: "usd" }],
+      }),
+    )
+
+    expect(product.id).toBe("virtual-explicit-id")
+    expect(product.metadata.key).toBe("virtual-key")
+    expect(product.isRecurring).toBe(false)
+    expect(product.meterInterval).toBeNull()
+    expect(product.meterIntervalCount).toBeNull()
+    expect(product.visibility).toBe("public")
+  })
+
+  it("falls back to metadata.key as id", () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Keyed Virtual",
+        metadata: { key: "from-key" },
+        prices: [{ amountType: "fixed", priceAmount: 100 }],
+      }),
+    )
+
+    expect(product.id).toBe("from-key")
+  })
+
+  it("maps free fixed prices and default currency", () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Free Virtual",
+        metadata: { key: "free-virtual" },
+        prices: [{ amountType: "fixed", priceAmount: 0 }],
+      }),
+    )
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("fixed")
+    if (price.amountType === "fixed") {
+      expect(price.priceAmount).toBe(0)
+      expect(price.priceCurrency).toBe("usd")
+      expect(price.taxBehavior).toBeNull()
+      expect(price.source).toBe("catalog")
+      expect(price.productId).toBe("free-virtual")
+    }
+  })
+
+  it("maps custom prices", () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Custom Virtual",
+        metadata: { key: "custom-virtual" },
+        prices: [
+          {
+            amountType: "custom",
+            presetAmount: 500,
+            minimumAmount: 100,
+            maximumAmount: 1000,
+            priceCurrency: "eur",
+          },
+        ],
+      }),
+    )
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("custom")
+    if (price.amountType === "custom") {
+      expect(price.presetAmount).toBe(500)
+      expect(price.minimumAmount).toBe(100)
+      expect(price.maximumAmount).toBe(1000)
+      expect(price.priceCurrency).toBe("eur")
+    }
+  })
+
+  it("maps metered unit prices with meter defaults", () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Metered Virtual",
+        recurringInterval: "month",
+        recurringIntervalCount: 1,
+        meterInterval: "month",
+        meterIntervalCount: 1,
+        metadata: { key: "metered-virtual" },
+        prices: [
+          {
+            amountType: "metered_unit",
+            meterId: "meter_123",
+            unitAmount: "1.5",
+            capAmount: 5000,
+            priceCurrency: "usd",
+          },
+        ],
+      }),
+    )
+
+    expect(product.isRecurring).toBe(true)
+    expect(product.recurringInterval).toBe("month")
+    expect(product.meterInterval).toBe("month")
+    expect(product.meterIntervalCount).toBe(1)
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("metered_unit")
+    if (price.amountType === "metered_unit") {
+      expect(price.capAmount).toBe(5000)
+      expect(price.meter.unit).toBe("scalar")
+      expect(price.meter.customLabel).toBeNull()
+      expect(price.meter.customMultiplier).toBeNull()
+    }
+  })
+
+  it("maps seat-based tiers and derives min/max seats", () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Seat Virtual",
+        metadata: { key: "seat-virtual" },
+        prices: [
+          {
+            amountType: "seat_based",
+            priceCurrency: "usd",
+            seatTiers: {
+              tiers: [
+                { minSeats: 1, maxSeats: 5, pricePerSeat: 1000 },
+                { minSeats: 6, maxSeats: null, pricePerSeat: 800 },
+              ],
+            },
+          },
+        ],
+      }),
+    )
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("seat_based")
+    if (price.amountType === "seat_based") {
+      expect(price.seatTiers.minimumSeats).toBe(1)
+      expect(price.seatTiers.maximumSeats).toBeNull()
+      expect(price.seatTiers.tiers).toHaveLength(2)
+    }
+  })
+})
+
+describe("writeProductsToFile", () => {
+  let tempDir: string
+
+  beforeAll(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "store-fn-unit-"))
+  })
+
+  afterAll(async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
+
+  it("writes typed product exports to disk", async () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Exported Product",
+        metadata: { key: "exported-product" },
+        prices: [{ amountType: "fixed", priceAmount: 1999, priceCurrency: "usd" }],
+      }),
+    )
+
+    const outputPath = join(tempDir, "products.ts")
+    await writeProductsToFile([product], outputPath)
+
+    const content = await readFile(outputPath, "utf-8")
+    expect(content).toContain(
+      'import type { Product } from "@polar-sh/sdk/models/components/product.js"',
+    )
+    expect(content).toContain("exportedProductProduct")
+    expect(content).toContain("Exported Product")
+    expect(content).toContain("as const satisfies Product")
+  })
+})

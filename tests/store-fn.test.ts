@@ -12,19 +12,20 @@ declare global {
 
 const POLAR_API_KEY = import.meta.env.POLAR_ACCESS_TOKEN
 const POLAR_ORGANIZATION_ID = import.meta.env.POLAR_ORGANIZATION_ID
+const hasPolarEnv = Boolean(POLAR_API_KEY && POLAR_ORGANIZATION_ID)
 
-if (!POLAR_API_KEY || !POLAR_ORGANIZATION_ID) {
-  throw new Error(
-    "Missing required environment variables: POLAR_ACCESS_TOKEN or POLAR_ORGANIZATION_ID",
-  )
-}
-
-describe("store-fn", () => {
+describe.skipIf(!hasPolarEnv)("store-fn", () => {
   let polarClient: Polar
   let store: ReturnType<typeof createStoreFn>
-  let createdProductIds: string[] = []
+  const createdProductIds: string[] = []
 
   beforeAll(() => {
+    if (!POLAR_API_KEY || !POLAR_ORGANIZATION_ID) {
+      throw new Error(
+        "Missing required environment variables: POLAR_ACCESS_TOKEN or POLAR_ORGANIZATION_ID",
+      )
+    }
+
     polarClient = new Polar({
       accessToken: POLAR_API_KEY,
       server: "sandbox",
@@ -132,13 +133,17 @@ describe("store-fn", () => {
         description: "A test product with free pricing",
         prices: [
           {
-            amountType: "free",
+            amountType: "fixed",
+            priceAmount: 0,
           },
         ],
       })
 
       expect(product).toBeDefined()
-      expect(product.prices[0].amountType).toBe("free")
+      expect(product.prices[0].amountType).toBe("fixed")
+      if (product.prices[0].amountType === "fixed") {
+        expect(product.prices[0].priceAmount).toBe(0)
+      }
     })
 
     it("should define a virtual product", () => {
