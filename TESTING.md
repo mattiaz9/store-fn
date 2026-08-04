@@ -3,11 +3,13 @@
 ## Prerequisites
 
 1. Install dependencies:
+
 ```bash
 pnpm install
 ```
 
 2. Set up environment variables:
+
 ```bash
 export POLAR_API_KEY="your_polar_api_key"
 export POLAR_ORGANIZATION_ID="your_organization_id"
@@ -26,6 +28,7 @@ tsx src/cli.ts push -i test-store.ts -o test-products.ts
 ```
 
 Or use the test script:
+
 ```bash
 pnpm run cli:test
 ```
@@ -70,7 +73,8 @@ The `test-store.ts` file in the root directory is an example store file you can 
 
 ## Troubleshooting
 
-- **"Cannot find module"**: Make sure you're using `tsx` to run the CLI when testing TypeScript files
+- **"Cannot find module"**: Make sure you're using `tsx` to run the CLI when testing TypeScript
+  files
 - **"POLAR_API_KEY is required"**: Set the environment variables before running
-- **"Store file must have a default export"**: Make sure your store file exports the store object as default
-
+- **"Store file must have a default export"**: Make sure your store file exports the store object as
+  default

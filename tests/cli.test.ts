@@ -1,9 +1,9 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { exec } from "child_process"
-import { promisify } from "util"
-import { writeFile, unlink, readFile } from "fs/promises"
 import { existsSync } from "fs"
+import { writeFile, unlink, readFile } from "fs/promises"
 import { resolve } from "path"
+import { promisify } from "util"
+import { describe, it, expect, beforeAll, afterAll } from "vitest"
 
 const execAsync = promisify(exec)
 

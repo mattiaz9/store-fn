@@ -1,9 +1,10 @@
 import { Polar } from "@polar-sh/sdk"
-import { ProductCreate } from "@polar-sh/sdk/models/components/productcreate.js"
-import { ProductCreateDefinition, ProductDefinition } from "./types"
-import { downloadStoreFromCloud, mapVirtualProduct, writeProductsToFile } from "./lib"
 import { Product } from "@polar-sh/sdk/models/components/product.js"
+import { ProductCreate } from "@polar-sh/sdk/models/components/productcreate.js"
 import pc from "picocolors"
+
+import { downloadStoreFromCloud, mapVirtualProduct, writeProductsToFile } from "./lib"
+import { ProductCreateDefinition, ProductDefinition } from "./types"
 
 interface CreateStoreFnOptions {
   client: Polar

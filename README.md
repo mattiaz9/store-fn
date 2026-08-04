@@ -1,6 +1,7 @@
 # store-fn
 
-A simple utility function to define and sync Polar products using code. Define your products in TypeScript and keep them in sync with your Polar store.
+A simple utility function to define and sync Polar products using code. Define your products in
+TypeScript and keep them in sync with your Polar store.
 
 ## Installation
 
@@ -69,7 +70,6 @@ console.log(`Synced ${result.updatedProducts.length} products`)
 store-fn push -i store.config.ts -o products.ts
 ```
 
-
 ## API Reference
 
 ### `createStoreFn(options)`
@@ -77,6 +77,7 @@ store-fn push -i store.config.ts -o products.ts
 Creates a store instance for defining and syncing products.
 
 **Parameters:**
+
 - `options.client` - A Polar SDK client instance
 - `options.organizationId` - Your Polar organization ID
 
@@ -87,6 +88,7 @@ Creates a store instance for defining and syncing products.
 Defines a product. Products are identified by their `key` in metadata.
 
 **Parameters:**
+
 - `definition.key` - Unique identifier for the product (stored in metadata)
 - `definition.name` - Product name
 - `definition.description` - Product description
@@ -101,7 +103,8 @@ Defines a product. Products are identified by their `key` in metadata.
 
 ### `store.push()`
 
-Syncs all defined products to Polar. Creates new products or updates existing ones based on the `key` in metadata.
+Syncs all defined products to Polar. Creates new products or updates existing ones based on the
+`key` in metadata.
 
 **Returns:** `Promise<{ updatedProducts: Product[] }>`
 
@@ -110,9 +113,9 @@ Syncs all defined products to Polar. Creates new products or updates existing on
 Utility function to write products to a TypeScript file. Used internally by the CLI.
 
 **Parameters:**
+
 - `products` - Array of Product objects
 - `path` - File path where products will be written
-
 
 ## Usage Examples
 
@@ -181,9 +184,9 @@ store.defineProduct({
   prices: [
     {
       amountType: "custom",
-      presetAmount: 25.00, // Suggested amount
-      minimumAmount: 5.00, // Minimum allowed
-      maximumAmount: 1000.00, // Maximum allowed
+      presetAmount: 25.0, // Suggested amount
+      minimumAmount: 5.0, // Minimum allowed
+      maximumAmount: 1000.0, // Maximum allowed
       priceCurrency: "usd",
     },
   ],
@@ -219,15 +222,15 @@ store.defineProduct({
       seatTiers: [
         {
           upTo: 5,
-          unitAmount: 10.00, // $10 per seat for first 5 seats
+          unitAmount: 10.0, // $10 per seat for first 5 seats
         },
         {
           upTo: 20,
-          unitAmount: 8.00, // $8 per seat for seats 6-20
+          unitAmount: 8.0, // $8 per seat for seats 6-20
         },
         {
           upTo: null, // Unlimited
-          unitAmount: 5.00, // $5 per seat for 21+
+          unitAmount: 5.0, // $5 per seat for 21+
         },
       ],
     },
@@ -246,7 +249,7 @@ store.defineProduct({
     {
       amountType: "metered_unit",
       priceCurrency: "usd",
-      capAmount: 1000.00, // Optional: maximum charge per billing period
+      capAmount: 1000.0, // Optional: maximum charge per billing period
     },
   ],
 })
@@ -363,6 +366,7 @@ store-fn push -i <input-file> -o <output-file>
 ```
 
 **Options:**
+
 - `-i` - Path to your store definition file (default: `store.config.ts`)
 - `-o` - Path where the generated products file will be written (default: `store/products.ts`)
 
@@ -373,6 +377,7 @@ store-fn push -i store.config.ts -o products.ts
 ```
 
 This command will:
+
 1. Load your store definition file
 2. Sync all products to Polar (create new ones or update existing ones)
 3. Generate a TypeScript file with all synced products
@@ -413,7 +418,10 @@ const price = basicPlanProduct.prices[0]
 
 ## Notes
 
-- **Price Conversion**: All price amounts are automatically converted from dollars to cents (multiplied by 100)
-- **Product Identification**: Products are matched by the `key` field in metadata. If a product with the same key exists, it will be updated; otherwise, a new product will be created
-- **Virtual Products**: Products marked as `virtual: true` are not synced to Polar but are included in the generated products file
+- **Price Conversion**: All price amounts are automatically converted from dollars to cents
+  (multiplied by 100)
+- **Product Identification**: Products are matched by the `key` field in metadata. If a product with
+  the same key exists, it will be updated; otherwise, a new product will be created
+- **Virtual Products**: Products marked as `virtual: true` are not synced to Polar but are included
+  in the generated products file
 - **Type Safety**: The generated products file includes TypeScript types for full type safety

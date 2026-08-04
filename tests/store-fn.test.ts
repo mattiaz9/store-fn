@@ -1,5 +1,6 @@
-import { describe, it, expect, beforeAll, afterAll } from "vitest"
 import { Polar } from "@polar-sh/sdk"
+import { describe, it, expect, beforeAll, afterAll } from "vitest"
+
 import { createStoreFn } from "../src/index.js"
 import { fetchPolarIterator } from "../src/utils.js"
 
@@ -208,7 +209,7 @@ describe("store-fn", () => {
       // Download all products from Polar to verify sync
       const products = await fetchPolarIterator(
         polarClient.products.list({
-          organizationId: POLAR_ORGANIZATION_ID!,
+          organizationId: POLAR_ORGANIZATION_ID,
         }),
       )
 
@@ -251,7 +252,7 @@ describe("store-fn", () => {
       // Download products to verify creation
       let products = await fetchPolarIterator(
         polarClient.products.list({
-          organizationId: POLAR_ORGANIZATION_ID!,
+          organizationId: POLAR_ORGANIZATION_ID,
         }),
       )
 
@@ -290,7 +291,7 @@ describe("store-fn", () => {
       // Download products again to verify update
       products = await fetchPolarIterator(
         polarClient.products.list({
-          organizationId: POLAR_ORGANIZATION_ID!,
+          organizationId: POLAR_ORGANIZATION_ID,
         }),
       )
 
@@ -331,7 +332,7 @@ describe("store-fn", () => {
       // Download all products from Polar to verify virtual products are NOT synced
       const products = await fetchPolarIterator(
         polarClient.products.list({
-          organizationId: POLAR_ORGANIZATION_ID!,
+          organizationId: POLAR_ORGANIZATION_ID,
         }),
       )
 
@@ -360,7 +361,7 @@ describe("store-fn", () => {
       // Download all products from Polar to verify sync
       const products = await fetchPolarIterator(
         polarClient.products.list({
-          organizationId: POLAR_ORGANIZATION_ID!,
+          organizationId: POLAR_ORGANIZATION_ID,
         }),
       )
 

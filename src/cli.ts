@@ -1,8 +1,9 @@
-import pc from "picocolors"
+import fs from "fs"
 import { resolve, join as pathJoin } from "path"
 import dotenv from "dotenv"
 import dotenvExpand from "dotenv-expand"
-import fs from "fs"
+import pc from "picocolors"
+
 import { writeProductsToFile } from "./lib.js"
 
 async function main() {

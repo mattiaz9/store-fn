@@ -14,7 +14,7 @@ export async function fetchPolarIterator<T>(
       },
       { page: number }
     >
-  >
+  >,
 ) {
   const items: T[] = []
 

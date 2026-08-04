@@ -1,12 +1,14 @@
-import { fetchPolarIterator, toCamelCase } from "./utils"
 import { Product } from "@polar-sh/sdk/models/components/product.js"
-import { ProductPriceSeatBased } from "@polar-sh/sdk/models/components/productpriceseatbased.js"
-import { ProductPriceMeteredUnit } from "@polar-sh/sdk/models/components/productpricemeteredunit.js"
 import { ProductPriceCustom } from "@polar-sh/sdk/models/components/productpricecustom.js"
 import { ProductPriceFixed } from "@polar-sh/sdk/models/components/productpricefixed.js"
 import { ProductPriceFree } from "@polar-sh/sdk/models/components/productpricefree.js"
+import { ProductPriceMeteredUnit } from "@polar-sh/sdk/models/components/productpricemeteredunit.js"
+import { ProductPriceSeatBased } from "@polar-sh/sdk/models/components/productpriceseatbased.js"
 import { SubscriptionRecurringInterval } from "@polar-sh/sdk/models/components/subscriptionrecurringinterval.js"
+import type { Options as PrettierOptions } from "prettier"
+
 import { ProductCreateDefinition } from "./types"
+import { fetchPolarIterator, toCamelCase } from "./utils"
 
 export async function downloadStoreFromCloud() {
   const [products, benefits] = await Promise.all([
@@ -179,8 +181,10 @@ ${products.map(formatProduct).join("\n\n")}
       path.resolve(basePath, config),
     )
     const prettierConfigPath = prettierConfigs.find((config) => existsSync(config))
-    const prettierConfig = prettierConfigPath
-      ? await import(prettierConfigPath).then((m) => m.default).catch(() => null)
+    const prettierConfig: PrettierOptions | null = prettierConfigPath
+      ? await import(prettierConfigPath)
+          .then((m: { default?: PrettierOptions }) => m.default ?? null)
+          .catch((): null => null)
       : null
 
     storeProductsFileContent = await prettier.format(storeProductsFileContent.trim(), {

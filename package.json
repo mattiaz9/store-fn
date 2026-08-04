@@ -32,13 +32,16 @@
   "bin": {
     "store-fn": "./dist/cli.js"
   },
-  "packageManager": "pnpm@10.26.2+sha512.0e308ff2005fc7410366f154f625f6631ab2b16b1d2e70238444dd6ae9d630a8482d92a451144debc492416896ed16f7b114a86ec68b8404b2443869e68ffda6",
+  "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee",
   "scripts": {
     "dev": "rm -rf dist && tsup --watch --config tsup.config.ts",
     "build": "tsup --minify --config tsup.config.ts",
     "test": "vitest",
     "perf": "tsc --noEmit ./tests/perf.test.ts",
-    "lint": "eslint --ext .ts,.tsx src",
+    "lint": "pnpm oxlint",
+    "format": "pnpm oxfmt",
+    "format:check": "pnpm oxfmt --check",
+    "typecheck": "pnpm tsc --noEmit",
     "cli:test": "tsx src/cli.ts push -i test-store.ts -o test-products.ts"
   },
   "peerDependencies": {
@@ -49,13 +52,16 @@
     "dotenv": "^17.2.0",
     "dotenv-expand": "^12.0.0",
     "picocolors": "1.1.1",
+    "prettier": "3.9.6",
     "tsx": "^4.20.0"
   },
   "devDependencies": {
     "@types/node": "25.0.3",
-    "prettier": "3.7.4",
+    "oxfmt": "0.62.0",
+    "oxlint": "1.77.0",
+    "oxlint-tsgolint": "7.0.2001",
     "tsup": "8.5.1",
-    "typescript": "5.9.3",
+    "typescript": "7.0.2",
     "vite": "7.3.0",
     "vitest": "4.0.16"
   }
