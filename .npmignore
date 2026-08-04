@@ -12,7 +12,7 @@ tests
 pnpm-lock.yaml
 tsconfig.json
 prettier.config.ts
-tsup.config.ts
+tsdown.config.ts
 vitest.config.ts
 vite-env.d.ts
 env.d.ts

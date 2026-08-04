@@ -34,8 +34,8 @@
   },
   "packageManager": "pnpm@11.20.0+sha512.9a6f330a95b66446ea088faf1521405a8a01f07fde7124cc9958dfed52d4bb436737e65b08f85f37b46fcba375092558ac51262b816844b22f63406ed166bfee",
   "scripts": {
-    "dev": "rm -rf dist && tsup --watch --config tsup.config.ts",
-    "build": "tsup --minify --config tsup.config.ts",
+    "dev": "rm -rf dist && tsdown --watch",
+    "build": "tsdown --minify",
     "test": "vitest",
     "perf": "tsc --noEmit ./tests/perf.test.ts",
     "lint": "pnpm oxlint",
@@ -48,21 +48,21 @@
     "@polar-sh/sdk": "^0.40.0"
   },
   "dependencies": {
-    "@polar-sh/sdk": "0.42.1",
-    "dotenv": "^17.2.0",
+    "@polar-sh/sdk": "0.49.0",
+    "dotenv": "^17.4.2",
     "dotenv-expand": "^12.0.0",
     "picocolors": "1.1.1",
     "prettier": "3.9.6",
-    "tsx": "^4.20.0"
+    "tsx": "^4.23.5"
   },
   "devDependencies": {
-    "@types/node": "25.0.3",
+    "@types/node": "26.1.2",
     "oxfmt": "0.62.0",
     "oxlint": "1.77.0",
     "oxlint-tsgolint": "7.0.2001",
-    "tsup": "8.5.1",
+    "tsdown": "0.22.14",
     "typescript": "7.0.2",
-    "vite": "7.3.0",
-    "vitest": "4.0.16"
+    "vite": "8.2.0",
+    "vitest": "4.1.10"
   }
 }

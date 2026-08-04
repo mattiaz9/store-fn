@@ -24,8 +24,7 @@
     "src",
     "tests",
     "vitest.config.ts",
-    "tsup.config.ts",
-    "prettier.config.ts",
+    "tsdown.config.ts",
     "env.d.ts",
     "vite-env.d.ts"
   ]
