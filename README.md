@@ -81,7 +81,7 @@ Creates a store instance for defining and syncing products.
 - `options.client` - A Polar SDK client instance
 - `options.organizationId` - Your Polar organization ID
 
-**Returns:** An object with `defineProduct` and `push` methods
+**Returns:** An object with `defineProduct`, `defineBenefit`, and `push` methods
 
 ### `store.defineProduct(definition)`
 
@@ -96,15 +96,33 @@ Defines a product. Products are identified by their `key` in metadata.
 - `definition.recurringIntervalCount` - Optional: Number of intervals (default: 1)
 - `definition.prices` - Array of price definitions
 - `definition.metadata` - Optional: Custom metadata object
+- `definition.benefits` - Optional: Array of benefit keys. Omitted means no benefits; `push`
+  replaces Polar attachments
 - `definition.virtual` - Optional: Set to `true` for virtual products (not synced to Polar)
 - `definition.id` - Required if `virtual: true`
 
 **Returns:** The product definition (with prices converted to cents)
 
+### `store.defineBenefit(definition)`
+
+Defines a benefit. Benefits are identified by their `key` in metadata.
+
+**Parameters:**
+
+- `definition.key` - Unique identifier (stored in metadata)
+- `definition.type` - Polar benefit type
+- `definition.description` - Shown on products that grant the benefit
+- `definition.properties` - Polar type-specific properties
+- `definition.metadata` - Optional
+- `definition.visibility` - Optional
+
+**Returns:** The benefit definition
+
 ### `store.push()`
 
-Syncs all defined products to Polar. Creates new products or updates existing ones based on the
-`key` in metadata.
+Syncs benefits first, then products, then attaches benefits to products by key. Creates new
+products or updates existing ones based on the `key` in metadata. Does not delete Polar benefits
+missing from the config.
 
 **Returns:** `Promise<{ updatedProducts: Product[] }>`
 
@@ -133,6 +151,35 @@ store.defineProduct({
       priceCurrency: "usd",
     },
   ],
+})
+```
+
+### Custom Benefit and Product Attach
+
+```ts
+store.defineBenefit({
+  key: "priority-support",
+  type: "custom",
+  description: "Priority support",
+  properties: {
+    note: "Email support@example.com",
+  },
+})
+
+store.defineProduct({
+  key: "pro",
+  name: "Pro Plan",
+  description: "For professionals and small teams.",
+  recurringInterval: "month",
+  recurringIntervalCount: 1,
+  prices: [
+    {
+      amountType: "fixed",
+      priceAmount: 29.99,
+      priceCurrency: "usd",
+    },
+  ],
+  benefits: ["priority-support"],
 })
 ```
 
