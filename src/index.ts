@@ -13,6 +13,8 @@ import {
 import type {
   BenefitCreateDefinition,
   BenefitDefinition,
+  MeterCreateDefinition,
+  MeterDefinition,
   ProductCreateDefinition,
   ProductDefinition,
   StoreMetadata,
@@ -26,6 +28,7 @@ interface CreateStoreFnOptions {
 function createStoreFn(options: CreateStoreFnOptions) {
   const definedProducts: ProductCreateDefinition[] = []
   const definedBenefits: BenefitCreateDefinition[] = []
+  const definedMeters: MeterCreateDefinition[] = []
 
   function defineProduct<TMeta extends StoreMetadata = StoreMetadata>({
     key,
@@ -43,6 +46,12 @@ function createStoreFn(options: CreateStoreFnOptions) {
       }
       if ("maximumAmount" in price && typeof price.maximumAmount === "number") {
         price.maximumAmount = Math.round(price.maximumAmount * 100)
+      }
+      if ("unitAmount" in price && typeof price.unitAmount === "number") {
+        price.unitAmount = Number((price.unitAmount * 100).toFixed(12))
+      }
+      if ("capAmount" in price && typeof price.capAmount === "number") {
+        price.capAmount = Math.round(price.capAmount * 100)
       }
       return price
     })
@@ -73,6 +82,23 @@ function createStoreFn(options: CreateStoreFnOptions) {
     } satisfies BenefitCreateDefinition<TMeta>
 
     definedBenefits.push(definition)
+
+    return definition
+  }
+
+  function defineMeter<TMeta extends StoreMetadata = StoreMetadata>({
+    key,
+    ...details
+  }: MeterDefinition<TMeta>) {
+    const definition = {
+      ...details,
+      metadata: {
+        key,
+        ...details.metadata,
+      } as TMeta & { key: string },
+    } satisfies MeterCreateDefinition<TMeta>
+
+    definedMeters.push(definition)
 
     return definition
   }
@@ -173,8 +199,16 @@ function createStoreFn(options: CreateStoreFnOptions) {
     }
   }
 
-  return { defineProduct, defineBenefit, push }
+  return { defineProduct, defineBenefit, defineMeter, push }
 }
 
-export type { BenefitCreateDefinition, BenefitDefinition, ProductCreateDefinition, ProductDefinition, StoreMetadata }
+export type {
+  BenefitCreateDefinition,
+  BenefitDefinition,
+  MeterCreateDefinition,
+  MeterDefinition,
+  ProductCreateDefinition,
+  ProductDefinition,
+  StoreMetadata,
+}
 export { createStoreFn, writeProductsToFile }

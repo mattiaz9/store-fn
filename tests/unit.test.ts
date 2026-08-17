@@ -249,6 +249,38 @@ describe("defineProduct", () => {
 
     expect(product.benefits).toEqual(["priority-support"])
   })
+
+  it("converts metered unitAmount and capAmount from dollars", () => {
+    const store = createStoreFn({
+      client: stubPolarClient(),
+      organizationId: "org_test",
+    })
+
+    const product = store.defineProduct({
+      key: "usage",
+      name: "Usage Plan",
+      recurringInterval: "month",
+      recurringIntervalCount: 1,
+      prices: [
+        {
+          amountType: "metered_unit",
+          meter: "invocations",
+          unitAmount: 0.1,
+          capAmount: 50,
+          priceCurrency: "usd",
+        },
+      ],
+    })
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("metered_unit")
+    if (price.amountType === "metered_unit") {
+      expect(price.meter).toBe("invocations")
+      expect(price.unitAmount).toBe(10)
+      expect(price.capAmount).toBe(5000)
+      expect(price).not.toHaveProperty("meterId")
+    }
+  })
 })
 
 describe("defineBenefit", () => {
@@ -273,6 +305,62 @@ describe("defineBenefit", () => {
     if (benefit.type === "custom") {
       expect(benefit.properties.note).toBe("Email support@example.com")
     }
+  })
+
+  it("accepts a meter key on meter_credit properties", () => {
+    const store = createStoreFn({
+      client: stubPolarClient(),
+      organizationId: "org_test",
+    })
+
+    const benefit = store.defineBenefit({
+      key: "included-invocations",
+      type: "meter_credit",
+      description: "1,000 invocations included",
+      properties: {
+        meter: "invocations",
+        units: 1000,
+        rollover: false,
+      },
+    })
+
+    expect(benefit.type).toBe("meter_credit")
+    if (benefit.type === "meter_credit") {
+      expect(benefit.properties.meter).toBe("invocations")
+      expect(benefit.properties.units).toBe(1000)
+      expect(benefit.properties.rollover).toBe(false)
+      expect(benefit.properties).not.toHaveProperty("meterId")
+    }
+  })
+})
+
+describe("defineMeter", () => {
+  const store = createStoreFn({
+    client: stubPolarClient(),
+    organizationId: "org_test",
+  })
+
+  it("stores key in metadata and keeps Polar fields", () => {
+    const meter = store.defineMeter({
+      key: "invocations",
+      name: "Invocations",
+      unit: "custom",
+      customLabel: "invocation",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+      },
+      aggregation: { func: "count" },
+      metadata: { kind: "usage" },
+    })
+
+    expect(meter.metadata.key).toBe("invocations")
+    expect(meter.metadata.kind).toBe("usage")
+    expect(meter.name).toBe("Invocations")
+    expect(meter.unit).toBe("custom")
+    expect(meter.customLabel).toBe("invocation")
+    expect(meter.filter.conjunction).toBe("and")
+    expect(meter.aggregation.func).toBe("count")
   })
 })
 
@@ -406,7 +494,7 @@ describe("mapVirtualProduct", () => {
         prices: [
           {
             amountType: "metered_unit",
-            meterId: "meter_123",
+            meter: "invocations",
             unitAmount: "1.5",
             capAmount: 5000,
             priceCurrency: "usd",
