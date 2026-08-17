@@ -81,7 +81,7 @@ Creates a store instance for defining and syncing products.
 - `options.client` - A Polar SDK client instance
 - `options.organizationId` - Your Polar organization ID
 
-**Returns:** An object with `defineProduct`, `defineBenefit`, and `push` methods
+**Returns:** An object with `defineProduct`, `defineBenefit`, `defineMeter`, and `push` methods
 
 ### `store.defineProduct(definition)`
 
@@ -94,7 +94,8 @@ Defines a product. Products are identified by their `key` in metadata.
 - `definition.description` - Product description
 - `definition.recurringInterval` - Optional: `"month"` | `"year"` | `"week"` | `"day"`
 - `definition.recurringIntervalCount` - Optional: Number of intervals (default: 1)
-- `definition.prices` - Array of price definitions
+- `definition.prices` - Array of price definitions. Metered prices use `meter` (store-fn key) plus
+  `unitAmount` in dollars
 - `definition.metadata` - Optional: Custom metadata object
 - `definition.benefits` - Optional: Array of benefit keys. Omitted means no benefits; `push`
   replaces Polar attachments
@@ -112,17 +113,33 @@ Defines a benefit. Benefits are identified by their `key` in metadata.
 - `definition.key` - Unique identifier (stored in metadata)
 - `definition.type` - Polar benefit type
 - `definition.description` - Shown on products that grant the benefit
-- `definition.properties` - Polar type-specific properties
+- `definition.properties` - Polar type-specific properties. For `meter_credit`, use
+  `properties.meter` (store-fn key), `units`, and `rollover`
 - `definition.metadata` - Optional
 - `definition.visibility` - Optional
 
 **Returns:** The benefit definition
 
+### `store.defineMeter(definition)`
+
+Defines a meter. Meters are identified by their `key` in metadata.
+
+**Parameters:**
+
+- `definition.key` - Unique identifier (stored in metadata)
+- `definition.name` - Shown on invoices and usage
+- `definition.unit` - Optional: `"scalar"` | `"token"` | `"custom"`
+- `definition.customLabel` / `definition.customMultiplier` - Required when `unit` is `"custom"` (label)
+- `definition.filter` - Which events to include
+- `definition.aggregation` - How to calculate quantity (`count`, `sum`, …)
+- `definition.metadata` - Optional
+
+**Returns:** The meter definition
+
 ### `store.push()`
 
-Syncs benefits first, then products, then attaches benefits to products by key. Creates new
-products or updates existing ones based on the `key` in metadata. Does not delete Polar benefits
-missing from the config.
+Syncs meters first, then benefits, then products. Creates new products or updates existing ones
+based on the `key` in metadata. Does not delete Polar meters or benefits missing from the config.
 
 **Returns:** `Promise<{ updatedProducts: Product[] }>`
 
@@ -285,20 +302,52 @@ store.defineProduct({
 })
 ```
 
-### Metered/Usage-Based Pricing
+### Plan with included usage and overage
 
 ```ts
+store.defineMeter({
+  key: "invocations",
+  name: "Invocations",
+  unit: "custom",
+  customLabel: "invocation",
+  filter: {
+    conjunction: "and",
+    clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+  },
+  aggregation: { func: "count" },
+})
+
+store.defineBenefit({
+  key: "included-invocations",
+  type: "meter_credit",
+  description: "1,000 invocations included",
+  properties: {
+    meter: "invocations",
+    units: 1000,
+    rollover: false,
+  },
+})
+
 store.defineProduct({
-  key: "usage-based",
-  name: "Pay As You Go",
-  description: "Pay only for what you use.",
+  key: "pro",
+  name: "Pro Plan",
+  description: "1,000 invocations included. Extra invocations billed at $0.10.",
+  recurringInterval: "month",
+  recurringIntervalCount: 1,
   prices: [
     {
-      amountType: "metered_unit",
+      amountType: "fixed",
+      priceAmount: 29.99,
       priceCurrency: "usd",
-      capAmount: 1000.0, // Optional: maximum charge per billing period
+    },
+    {
+      amountType: "metered_unit",
+      meter: "invocations",
+      unitAmount: 0.1, // $0.10 per extra invocation
+      priceCurrency: "usd",
     },
   ],
+  benefits: ["included-invocations"],
 })
 ```
 
