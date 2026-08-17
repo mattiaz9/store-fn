@@ -95,9 +95,16 @@ function createStoreFn(options: CreateStoreFnOptions) {
       )
 
       if (existingBenefit) {
+        const { organizationId: _organizationId, ...requestBody } = benefit
         const updatedBenefit = await polarClient.benefits.update({
           id: existingBenefit.id,
-          requestBody: benefit,
+          requestBody:
+            requestBody.type === "custom"
+              ? {
+                  ...requestBody,
+                  properties: { note: requestBody.properties.note ?? null },
+                }
+              : requestBody,
         })
         benefitsByKey.set(benefit.metadata.key, updatedBenefit)
 
@@ -108,6 +115,10 @@ function createStoreFn(options: CreateStoreFnOptions) {
 
         console.log(pc.cyan(`Created new benefit '${pc.bold(benefit.description)}'`))
       }
+    }
+
+    for (const product of definedProducts) {
+      resolveBenefits(product.name, product.benefits, benefitsByKey)
     }
 
     const updatedProducts: Product[] = []

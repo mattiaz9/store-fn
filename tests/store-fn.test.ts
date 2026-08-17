@@ -10,8 +10,8 @@ declare global {
   var polarOrganizationId: string
 }
 
-const POLAR_API_KEY = import.meta.env.POLAR_ACCESS_TOKEN
-const POLAR_ORGANIZATION_ID = import.meta.env.POLAR_ORGANIZATION_ID
+const POLAR_API_KEY = import.meta.env.POLAR_ACCESS_TOKEN ?? ""
+const POLAR_ORGANIZATION_ID = import.meta.env.POLAR_ORGANIZATION_ID ?? ""
 const hasPolarEnv = Boolean(POLAR_API_KEY && POLAR_ORGANIZATION_ID)
 
 describe.skipIf(!hasPolarEnv)("store-fn", () => {
@@ -420,11 +420,11 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
 
       const result = await store.push()
       const product = result.updatedProducts[0]
-      expect(product?.benefits).toHaveLength(1)
-      expect(product?.benefits[0]?.metadata.key).toBe(benefitKey)
-
       if (product?.id) createdProductIds.push(product.id)
       if (product?.benefits[0]?.id) createdBenefitIds.push(product.benefits[0].id)
+
+      expect(product?.benefits).toHaveLength(1)
+      expect(product?.benefits[0]?.metadata.key).toBe(benefitKey)
     }, 30000)
 
     it("updates a benefit description on a second push", async () => {

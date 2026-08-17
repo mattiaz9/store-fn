@@ -33,13 +33,13 @@ export type ProductCreateDefinition<TMeta extends StoreMetadata = StoreMetadata>
   | WithRequiredStoreMetadata<ProductCreateRecurring, TMeta>
   | WithRequiredStoreMetadata<ProductCreateOneTime, TMeta>
 
-type WithBenefitFields<T, TMeta extends StoreMetadata> = Omit<T, "metadata"> & {
-  metadata?: TMeta
-}
+type WithBenefitFields<T, TMeta extends StoreMetadata> = T extends unknown
+  ? Omit<T, "metadata"> & { metadata?: TMeta }
+  : never
 
-type WithRequiredBenefitMetadata<T, TMeta extends StoreMetadata> = Omit<T, "metadata"> & {
-  metadata: TMeta & { key: string }
-}
+type WithRequiredBenefitMetadata<T, TMeta extends StoreMetadata> = T extends unknown
+  ? Omit<T, "metadata"> & { metadata: TMeta & { key: string } }
+  : never
 
 export type BenefitDefinition<TMeta extends StoreMetadata = StoreMetadata> =
   WithBenefitFields<BenefitCreate, TMeta> & {

@@ -471,4 +471,6 @@ const price = basicPlanProduct.prices[0]
   the same key exists, it will be updated; otherwise, a new product will be created
 - **Virtual Products**: Products marked as `virtual: true` are not synced to Polar but are included
   in the generated products file
+- **Benefit attachments**: The next `push()` replaces Polar dashboard attachments for products in
+  the config. Omitted `benefits` means an empty list.
 - **Type Safety**: The generated products file includes TypeScript types for full type safety

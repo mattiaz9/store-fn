@@ -47,7 +47,7 @@ function stubCustomBenefit(key: string, id = `ben_${key}`): Benefit {
 
 function asPageIterator<T>(items: T[]) {
   return Promise.resolve(
-    (async function* () {
+    (function* () {
       yield {
         result: {
           items,
@@ -66,13 +66,13 @@ function createMemoryPolar() {
   const client = {
     benefits: {
       list: () => asPageIterator(benefits),
-      create: async (payload: { metadata?: { key?: string }; description: string; type: string }) => {
+      create: (payload: { metadata?: { key?: string }; description: string; type: string }) => {
         const created = stubCustomBenefit(String(payload.metadata?.key), `ben_${nextId++}`)
         Object.assign(created, payload, { id: created.id })
         benefits.push(created)
         return created
       },
-      update: async ({
+      update: ({
         id,
         requestBody,
       }: {
@@ -87,7 +87,7 @@ function createMemoryPolar() {
     },
     products: {
       list: () => asPageIterator(products),
-      create: async (payload: { name: string; metadata?: { key?: string } }) => {
+      create: (payload: { name: string; metadata?: { key?: string } }) => {
         const created = {
           id: `prod_${nextId++}`,
           name: payload.name,
@@ -97,13 +97,13 @@ function createMemoryPolar() {
         products.push(created as (typeof products)[number])
         return created
       },
-      update: async ({ id, productUpdate }: { id: string; productUpdate: { name?: string } }) => {
+      update: ({ id, productUpdate }: { id: string; productUpdate: { name?: string } }) => {
         const existing = products.find((product) => product.id === id)
         if (!existing) throw new Error(`missing product ${id}`)
         Object.assign(existing, productUpdate)
         return existing
       },
-      updateBenefits: async ({
+      updateBenefits: ({
         id,
         productBenefitsUpdate,
       }: {
@@ -270,7 +270,9 @@ describe("defineBenefit", () => {
     expect(benefit.metadata.tier).toBe("pro")
     expect(benefit.type).toBe("custom")
     expect(benefit.description).toBe("Priority support")
-    expect((benefit.properties as { note: string }).note).toBe("Email support@example.com")
+    if (benefit.type === "custom") {
+      expect(benefit.properties.note).toBe("Email support@example.com")
+    }
   })
 })
 
@@ -607,7 +609,7 @@ describe("push benefits", () => {
     await expect(store.push()).rejects.toThrow(
       "Unknown benefit key 'missing' on product 'Pro Plan'",
     )
-    expect(products[0]?.benefits ?? []).toEqual([])
+    expect(products).toHaveLength(0)
   })
 
   it("maps virtual products with synced Polar benefits", async () => {
