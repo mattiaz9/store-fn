@@ -18,6 +18,7 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
   let polarClient: Polar
   let store: ReturnType<typeof createStoreFn>
   const createdProductIds: string[] = []
+  const createdBenefitIds: string[] = []
 
   beforeAll(() => {
     if (!POLAR_API_KEY || !POLAR_ORGANIZATION_ID) {
@@ -53,6 +54,14 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
         })
       } catch (error) {
         console.error(`Error archiving product ${productId}:`, error)
+      }
+    }
+
+    for (const benefitId of createdBenefitIds) {
+      try {
+        await polarClient.benefits.delete({ id: benefitId })
+      } catch (error) {
+        console.error(`Error deleting benefit ${benefitId}:`, error)
       }
     }
   })
@@ -383,6 +392,181 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
 
       if (product?.id) {
         createdProductIds.push(product.id)
+      }
+    }, 30000)
+  })
+
+  describe("benefits", () => {
+    it("creates a custom benefit and attaches it to a product", async () => {
+      const store = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      const benefitKey = `test-benefit-attach-${Date.now()}`
+      const productKey = `test-product-attach-${Date.now()}`
+
+      store.defineBenefit({
+        key: benefitKey,
+        type: "custom",
+        description: "Test attach benefit",
+        properties: { note: "integration" },
+      })
+      store.defineProduct({
+        key: productKey,
+        name: "Test Benefit Attach Product",
+        prices: [{ amountType: "fixed", priceAmount: 5, priceCurrency: "usd" }],
+        benefits: [benefitKey],
+      })
+
+      const result = await store.push()
+      const product = result.updatedProducts[0]
+      expect(product?.benefits).toHaveLength(1)
+      expect(product?.benefits[0]?.metadata.key).toBe(benefitKey)
+
+      if (product?.id) createdProductIds.push(product.id)
+      if (product?.benefits[0]?.id) createdBenefitIds.push(product.benefits[0].id)
+    }, 30000)
+
+    it("updates a benefit description on a second push", async () => {
+      const benefitKey = `test-benefit-update-${Date.now()}`
+      const productKey = `test-product-benefit-update-${Date.now()}`
+
+      const first = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      first.defineBenefit({
+        key: benefitKey,
+        type: "custom",
+        description: "Original benefit",
+        properties: { note: null },
+      })
+      first.defineProduct({
+        key: productKey,
+        name: "Test Benefit Update Product",
+        prices: [{ amountType: "fixed", priceAmount: 5, priceCurrency: "usd" }],
+        benefits: [benefitKey],
+      })
+      const created = await first.push()
+      if (created.updatedProducts[0]?.id) createdProductIds.push(created.updatedProducts[0].id)
+      const benefitId = created.updatedProducts[0]?.benefits[0]?.id
+      if (benefitId) createdBenefitIds.push(benefitId)
+
+      const second = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      second.defineBenefit({
+        key: benefitKey,
+        type: "custom",
+        description: "Updated benefit",
+        properties: { note: null },
+      })
+      second.defineProduct({
+        key: productKey,
+        name: "Test Benefit Update Product",
+        prices: [{ amountType: "fixed", priceAmount: 5, priceCurrency: "usd" }],
+        benefits: [benefitKey],
+      })
+      const updated = await second.push()
+      expect(updated.updatedProducts[0]?.benefits[0]?.description).toBe("Updated benefit")
+    }, 30000)
+
+    it("clears product attachments when benefits are omitted", async () => {
+      const benefitKey = `test-benefit-clear-${Date.now()}`
+      const productKey = `test-product-clear-${Date.now()}`
+
+      const first = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      first.defineBenefit({
+        key: benefitKey,
+        type: "custom",
+        description: "Clear-me benefit",
+        properties: { note: null },
+      })
+      first.defineProduct({
+        key: productKey,
+        name: "Test Benefit Clear Product",
+        prices: [{ amountType: "fixed", priceAmount: 5, priceCurrency: "usd" }],
+        benefits: [benefitKey],
+      })
+      const created = await first.push()
+      if (created.updatedProducts[0]?.id) createdProductIds.push(created.updatedProducts[0].id)
+      if (created.updatedProducts[0]?.benefits[0]?.id) {
+        createdBenefitIds.push(created.updatedProducts[0].benefits[0].id)
+      }
+      expect(created.updatedProducts[0]?.benefits).toHaveLength(1)
+
+      const second = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      second.defineBenefit({
+        key: benefitKey,
+        type: "custom",
+        description: "Clear-me benefit",
+        properties: { note: null },
+      })
+      second.defineProduct({
+        key: productKey,
+        name: "Test Benefit Clear Product",
+        prices: [{ amountType: "fixed", priceAmount: 5, priceCurrency: "usd" }],
+      })
+      const cleared = await second.push()
+      expect(cleared.updatedProducts[0]?.benefits).toEqual([])
+    }, 30000)
+
+    it("leaves Polar benefits that are not in the store config", async () => {
+      const orphan = await polarClient.benefits.create({
+        type: "custom",
+        description: `Orphan ${Date.now()}`,
+        properties: { note: null },
+      })
+      createdBenefitIds.push(orphan.id)
+
+      const store = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      store.defineProduct({
+        key: `test-orphan-product-${Date.now()}`,
+        name: "Test Orphan Product",
+        prices: [{ amountType: "fixed", priceAmount: 5, priceCurrency: "usd" }],
+      })
+      const result = await store.push()
+      if (result.updatedProducts[0]?.id) createdProductIds.push(result.updatedProducts[0].id)
+
+      const fetched = await polarClient.benefits.get({ id: orphan.id })
+      expect(fetched.id).toBe(orphan.id)
+    }, 30000)
+
+    it("throws when a product references a benefit key that was not defined", async () => {
+      const store = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      const productKey = `test-missing-benefit-${Date.now()}`
+      store.defineProduct({
+        key: productKey,
+        name: "Test Missing Benefit Product",
+        prices: [{ amountType: "fixed", priceAmount: 5, priceCurrency: "usd" }],
+        benefits: ["does-not-exist"],
+      })
+
+      try {
+        await expect(store.push()).rejects.toThrow(
+          "Unknown benefit key 'does-not-exist' on product 'Test Missing Benefit Product'",
+        )
+      } finally {
+        const products = await fetchPolarIterator(
+          polarClient.products.list({
+            organizationId: POLAR_ORGANIZATION_ID,
+          }),
+        )
+        const created = products.find((p) => p.metadata?.key === productKey)
+        if (created?.id) createdProductIds.push(created.id)
       }
     }, 30000)
   })
