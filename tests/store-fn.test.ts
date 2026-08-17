@@ -712,12 +712,17 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
         ],
       })
       const updated = await second.push()
-      const updatedMetered = updated.updatedProducts[0]?.prices.find(
+      const updatedProduct = updated.updatedProducts[0]
+      expect(updatedProduct).toBeDefined()
+      const updatedMetered = updatedProduct!.prices.find(
         (price) => price.amountType === "metered_unit",
       )
-      if (updatedMetered?.amountType === "metered_unit") {
-        expect(updatedMetered.meter.name).toBe("Updated Meter")
+      expect(updatedMetered).toBeDefined()
+      expect(updatedMetered?.amountType).toBe("metered_unit")
+      if (updatedMetered?.amountType !== "metered_unit") {
+        throw new Error("Expected a metered unit price")
       }
+      expect(updatedMetered.meter.name).toBe("Updated Meter")
     }, 30000)
 
     it("leaves Polar meters that are not in the store config", async () => {
@@ -781,6 +786,7 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
           }),
         )
         const created = products.find((p) => p.metadata?.key === productKey)
+        expect(created).toBeUndefined()
         if (created?.id) createdProductIds.push(created.id)
       }
     }, 30000)
