@@ -3,7 +3,13 @@ import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import pc from "picocolors"
 
 import { downloadStoreFromCloud, mapVirtualProduct, writeProductsToFile } from "./lib"
-import type { ProductCreateDefinition, ProductDefinition, StoreMetadata } from "./types"
+import type {
+  BenefitCreateDefinition,
+  BenefitDefinition,
+  ProductCreateDefinition,
+  ProductDefinition,
+  StoreMetadata,
+} from "./types"
 
 interface CreateStoreFnOptions {
   client: Polar
@@ -12,6 +18,7 @@ interface CreateStoreFnOptions {
 
 function createStoreFn(options: CreateStoreFnOptions) {
   const definedProducts: ProductCreateDefinition[] = []
+  const definedBenefits: BenefitCreateDefinition[] = []
 
   function defineProduct<TMeta extends StoreMetadata = StoreMetadata>({
     key,
@@ -42,6 +49,23 @@ function createStoreFn(options: CreateStoreFnOptions) {
     } satisfies ProductCreateDefinition<TMeta>
 
     definedProducts.push(definition)
+
+    return definition
+  }
+
+  function defineBenefit<TMeta extends StoreMetadata = StoreMetadata>({
+    key,
+    ...details
+  }: BenefitDefinition<TMeta>) {
+    const definition = {
+      ...details,
+      metadata: {
+        key,
+        ...details.metadata,
+      } as TMeta & { key: string },
+    } satisfies BenefitCreateDefinition<TMeta>
+
+    definedBenefits.push(definition)
 
     return definition
   }
@@ -97,8 +121,8 @@ function createStoreFn(options: CreateStoreFnOptions) {
     }
   }
 
-  return { defineProduct, push }
+  return { defineProduct, defineBenefit, push }
 }
 
-export type { ProductCreateDefinition, ProductDefinition, StoreMetadata }
+export type { BenefitCreateDefinition, BenefitDefinition, ProductCreateDefinition, ProductDefinition, StoreMetadata }
 export { createStoreFn, writeProductsToFile }

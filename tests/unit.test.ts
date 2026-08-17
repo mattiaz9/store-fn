@@ -133,6 +133,45 @@ describe("defineProduct", () => {
     expect(product.metadata.maxUsers).toBe(10)
     expect(product.metadata.flagged).toBe(true)
   })
+
+  it("accepts benefit keys on the definition", () => {
+    const store = createStoreFn({
+      client: stubPolarClient(),
+      organizationId: "org_test",
+    })
+
+    const product = store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 1 }],
+      benefits: ["priority-support"],
+    })
+
+    expect(product.benefits).toEqual(["priority-support"])
+  })
+})
+
+describe("defineBenefit", () => {
+  const store = createStoreFn({
+    client: stubPolarClient(),
+    organizationId: "org_test",
+  })
+
+  it("stores key in metadata and keeps Polar fields", () => {
+    const benefit = store.defineBenefit({
+      key: "priority-support",
+      type: "custom",
+      description: "Priority support",
+      properties: { note: "Email support@example.com" },
+      metadata: { tier: "pro" },
+    })
+
+    expect(benefit.metadata.key).toBe("priority-support")
+    expect(benefit.metadata.tier).toBe("pro")
+    expect(benefit.type).toBe("custom")
+    expect(benefit.description).toBe("Priority support")
+    expect((benefit.properties as { note: string }).note).toBe("Email support@example.com")
+  })
 })
 
 describe("mapVirtualProduct", () => {
