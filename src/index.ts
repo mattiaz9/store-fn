@@ -1,15 +1,14 @@
-import type { Polar } from "@polar-sh/sdk"
-import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
-import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import pc from "picocolors"
 
 import {
   downloadStoreFromCloud,
   mapVirtualProduct,
   resolveBenefits,
+  toBenefitPayload,
   toProductPayload,
   writeProductsToFile,
 } from "./lib"
+
 import type {
   BenefitCreateDefinition,
   BenefitDefinition,
@@ -19,6 +18,10 @@ import type {
   ProductDefinition,
   StoreMetadata,
 } from "./types"
+import type { Polar } from "@polar-sh/sdk"
+import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
+import type { Meter } from "@polar-sh/sdk/models/components/meter.js"
+import type { Product } from "@polar-sh/sdk/models/components/product.js"
 
 interface CreateStoreFnOptions {
   client: Polar
@@ -109,6 +112,34 @@ function createStoreFn(options: CreateStoreFnOptions) {
 
     const polarStore = await downloadStoreFromCloud()
 
+    const metersByKey = new Map<string, Meter>()
+
+    for (const meter of definedMeters) {
+      if (!meter.metadata?.key) {
+        throw new Error(`Missing 'key' in meter ${meter.name}`)
+      }
+
+      const existingMeter = polarStore.meters.find(
+        (item) => item.metadata.key === meter.metadata.key,
+      )
+      const { organizationId: _organizationId, ...meterPayload } = meter
+
+      const upsertedMeter = existingMeter
+        ? await polarClient.meters.update({
+            id: existingMeter.id,
+            meterUpdate: meterPayload,
+          })
+        : await polarClient.meters.create(meterPayload)
+
+      metersByKey.set(meter.metadata.key, upsertedMeter)
+
+      if (existingMeter) {
+        console.log(pc.green(`Updated meter '${pc.bold(meter.name)}'`))
+      } else {
+        console.log(pc.cyan(`Created new meter '${pc.bold(meter.name)}'`))
+      }
+    }
+
     const benefitsByKey = new Map<string, Benefit>()
 
     for (const benefit of definedBenefits) {
@@ -119,9 +150,10 @@ function createStoreFn(options: CreateStoreFnOptions) {
       const existingBenefit = polarStore.benefits.find(
         (item) => item.metadata.key === benefit.metadata.key,
       )
+      const benefitPayload = toBenefitPayload(benefit, metersByKey)
 
       if (existingBenefit) {
-        const { organizationId: _organizationId, ...requestBody } = benefit
+        const { organizationId: _organizationId, ...requestBody } = benefitPayload
         const updatedBenefit = await polarClient.benefits.update({
           id: existingBenefit.id,
           requestBody:
@@ -136,7 +168,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
 
         console.log(pc.green(`Updated benefit '${pc.bold(benefit.description)}'`))
       } else {
-        const createdBenefit = await polarClient.benefits.create(benefit)
+        const createdBenefit = await polarClient.benefits.create(benefitPayload)
         benefitsByKey.set(benefit.metadata.key, createdBenefit)
 
         console.log(pc.cyan(`Created new benefit '${pc.bold(benefit.description)}'`))
@@ -155,7 +187,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
       }
 
       if (product.virtual) {
-        const virtualProduct = mapVirtualProduct(product, benefitsByKey)
+        const virtualProduct = mapVirtualProduct(product, benefitsByKey, metersByKey)
         updatedProducts.push(virtualProduct)
         continue
       }
@@ -164,7 +196,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
         (p) => p.metadata.key === product.metadata?.key,
       )
 
-      const productPayload = toProductPayload(product)
+      const productPayload = toProductPayload(product, metersByKey)
 
       const upsertedProduct = existingProduct
         ? await polarClient.products.update({

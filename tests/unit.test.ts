@@ -84,10 +84,33 @@ function asPageIterator<T>(items: T[]) {
 
 function createMemoryPolar() {
   const benefits: Benefit[] = []
-  const products: Array<Product & { metadata: { key?: string } }> = []
+  const products: Array<Product & { metadata: { key?: string }; prices?: unknown[] }> = []
+  const meters: Meter[] = []
   let nextId = 1
 
   const client = {
+    meters: {
+      list: () => asPageIterator(meters),
+      create: (payload: {
+        name: string
+        metadata?: { key?: string }
+        unit?: Meter["unit"]
+        customLabel?: string | null
+        filter: Meter["filter"]
+        aggregation: Meter["aggregation"]
+      }) => {
+        const created = stubMeter(String(payload.metadata?.key), `meter_${nextId++}`)
+        Object.assign(created, payload, { id: created.id })
+        meters.push(created)
+        return created
+      },
+      update: ({ id, meterUpdate }: { id: string; meterUpdate: Partial<Meter> }) => {
+        const existing = meters.find((meter) => meter.id === id)
+        if (!existing) throw new Error(`missing meter ${id}`)
+        Object.assign(existing, meterUpdate)
+        return existing
+      },
+    },
     benefits: {
       list: () => asPageIterator(benefits),
       create: (payload: { metadata?: { key?: string }; description: string; type: string }) => {
@@ -109,22 +132,26 @@ function createMemoryPolar() {
         return existing
       },
     },
-    meters: {
-      list: () => asPageIterator([]),
-    },
     products: {
       list: () => asPageIterator(products),
-      create: (payload: { name: string; metadata?: { key?: string } }) => {
+      create: (payload: { name: string; metadata?: { key?: string }; prices?: unknown[] }) => {
         const created = {
           id: `prod_${nextId++}`,
           name: payload.name,
           metadata: payload.metadata ?? {},
           benefits: [] as Benefit[],
+          prices: payload.prices ?? [],
         }
         products.push(created as (typeof products)[number])
         return created
       },
-      update: ({ id, productUpdate }: { id: string; productUpdate: { name?: string } }) => {
+      update: ({
+        id,
+        productUpdate,
+      }: {
+        id: string
+        productUpdate: { name?: string; prices?: unknown[] }
+      }) => {
         const existing = products.find((product) => product.id === id)
         if (!existing) throw new Error(`missing product ${id}`)
         Object.assign(existing, productUpdate)
@@ -149,7 +176,7 @@ function createMemoryPolar() {
     },
   }
 
-  return { client: client as unknown as Polar, benefits, products }
+  return { client: client as unknown as Polar, benefits, products, meters }
 }
 
 describe("toCamelCase", () => {
@@ -839,5 +866,227 @@ describe("push benefits", () => {
     expect(products).toHaveLength(0)
     expect(result.updatedProducts[0]?.benefits[0]?.metadata.key).toBe("priority-support")
     expect(result.updatedProducts[0]?.benefits[0]?.id).toBe(benefits[0]?.id)
+  })
+})
+
+describe("push meters", () => {
+  it("creates a meter and rewrites keys on benefit and product payloads", async () => {
+    const { client, meters, benefits, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineMeter({
+      key: "invocations",
+      name: "Invocations",
+      unit: "custom",
+      customLabel: "invocation",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+      },
+      aggregation: { func: "count" },
+    })
+    store.defineBenefit({
+      key: "included-invocations",
+      type: "meter_credit",
+      description: "1,000 invocations included",
+      properties: { meter: "invocations", units: 1000, rollover: false },
+    })
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      recurringInterval: "month",
+      recurringIntervalCount: 1,
+      prices: [
+        { amountType: "fixed", priceAmount: 29.99, priceCurrency: "usd" },
+        {
+          amountType: "metered_unit",
+          meter: "invocations",
+          unitAmount: 0.1,
+          priceCurrency: "usd",
+        },
+      ],
+      benefits: ["included-invocations"],
+    })
+
+    const result = await store.push()
+
+    expect(meters).toHaveLength(1)
+    expect(meters[0]?.metadata.key).toBe("invocations")
+    expect(benefits[0]?.type).toBe("meter_credit")
+    if (benefits[0]?.type === "meter_credit") {
+      expect(benefits[0].properties.meterId).toBe(meters[0]?.id)
+      expect(benefits[0].properties).not.toHaveProperty("meter")
+    }
+    const metered = products[0]?.prices?.find((price) => price.amountType === "metered_unit")
+    expect(metered?.meterId).toBe(meters[0]?.id)
+    expect(metered).not.toHaveProperty("meter")
+    expect(result.updatedProducts[0]?.benefits[0]?.id).toBe(benefits[0]?.id)
+  })
+
+  it("updates an existing meter by metadata.key and does not delete orphans", async () => {
+    const { client, meters } = createMemoryPolar()
+    meters.push(stubMeter("invocations", "meter_existing"))
+    meters.push(stubMeter("orphan", "meter_orphan"))
+
+    const store = createStoreFn({ client, organizationId: "org_test" })
+    store.defineMeter({
+      key: "invocations",
+      name: "API Invocations",
+      unit: "custom",
+      customLabel: "invocation",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+      },
+      aggregation: { func: "count" },
+    })
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+    })
+
+    await store.push()
+
+    expect(meters.map((meter) => meter.id)).toEqual(["meter_existing", "meter_orphan"])
+    expect(meters[0]?.name).toBe("API Invocations")
+  })
+
+  it("throws before Polar writes when a benefit references an unknown meter key", async () => {
+    const { client, benefits, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineBenefit({
+      key: "included-invocations",
+      type: "meter_credit",
+      description: "1,000 invocations included",
+      properties: { meter: "missing", units: 1000, rollover: false },
+    })
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+      benefits: ["included-invocations"],
+    })
+
+    await expect(store.push()).rejects.toThrow(
+      "Unknown meter key 'missing' on benefit '1,000 invocations included'",
+    )
+    expect(benefits).toHaveLength(0)
+    expect(products).toHaveLength(0)
+  })
+
+  it("throws before Polar writes when a product references an unknown meter key", async () => {
+    const { client, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      recurringInterval: "month",
+      recurringIntervalCount: 1,
+      prices: [
+        {
+          amountType: "metered_unit",
+          meter: "missing",
+          unitAmount: 0.1,
+          priceCurrency: "usd",
+        },
+      ],
+    })
+
+    await expect(store.push()).rejects.toThrow("Unknown meter key 'missing' on product 'Pro Plan'")
+    expect(products).toHaveLength(0)
+  })
+
+  it("maps virtual products with synced Polar meters", async () => {
+    const { client, meters, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineMeter({
+      key: "invocations",
+      name: "Invocations",
+      unit: "custom",
+      customLabel: "invocation",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+      },
+      aggregation: { func: "count" },
+    })
+    store.defineProduct({
+      virtual: true,
+      key: "local-usage",
+      name: "Local Usage",
+      recurringInterval: "month",
+      recurringIntervalCount: 1,
+      prices: [
+        {
+          amountType: "metered_unit",
+          meter: "invocations",
+          unitAmount: 0.1,
+          priceCurrency: "usd",
+        },
+      ],
+    })
+
+    const result = await store.push()
+    const price = result.updatedProducts[0]?.prices[0]
+
+    expect(products).toHaveLength(0)
+    expect(price?.amountType).toBe("metered_unit")
+    if (price?.amountType === "metered_unit") {
+      expect(price.meterId).toBe(meters[0]?.id)
+      expect(price.meter.name).toBe("Invocations")
+    }
+  })
+
+  it("keeps stored meter keys after push so a second push still resolves", async () => {
+    const { client } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    const benefit = store.defineBenefit({
+      key: "included-invocations",
+      type: "meter_credit",
+      description: "1,000 invocations included",
+      properties: { meter: "invocations", units: 1000, rollover: false },
+    })
+    store.defineMeter({
+      key: "invocations",
+      name: "Invocations",
+      unit: "scalar",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+      },
+      aggregation: { func: "count" },
+    })
+    const product = store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      recurringInterval: "month",
+      recurringIntervalCount: 1,
+      prices: [
+        {
+          amountType: "metered_unit",
+          meter: "invocations",
+          unitAmount: 0.1,
+          priceCurrency: "usd",
+        },
+      ],
+      benefits: ["included-invocations"],
+    })
+
+    await store.push()
+    await store.push()
+
+    expect(benefit.type).toBe("meter_credit")
+    if (benefit.type === "meter_credit") {
+      expect(benefit.properties.meter).toBe("invocations")
+    }
+    const price = product.prices[0]
+    if (price.amountType === "metered_unit") {
+      expect(price.meter).toBe("invocations")
+    }
   })
 })
