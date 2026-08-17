@@ -1,4 +1,9 @@
+import { fetchPolarIterator, toCamelCase } from "./utils"
+
+import type { BenefitCreateDefinition, ProductCreateDefinition } from "./types"
 import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
+import type { BenefitCreate } from "@polar-sh/sdk/models/components/benefitcreate.js"
+import type { Meter } from "@polar-sh/sdk/models/components/meter.js"
 import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import type { ProductPrice } from "@polar-sh/sdk/models/components/productprice.js"
 import type { ProductPriceCustom } from "@polar-sh/sdk/models/components/productpricecustom.js"
@@ -10,13 +15,10 @@ import type { ProductPriceSeatTiersOutput } from "@polar-sh/sdk/models/component
 import type { RecurringInterval } from "@polar-sh/sdk/models/components/recurringinterval.js"
 import type { Options as PrettierOptions } from "prettier"
 
-import type { ProductCreateDefinition } from "./types"
-import { fetchPolarIterator, toCamelCase } from "./utils"
-
 type VirtualProductDefinition = ProductCreateDefinition
 
 export async function downloadStoreFromCloud() {
-  const [products, benefits] = await Promise.all([
+  const [products, benefits, meters] = await Promise.all([
     fetchPolarIterator(
       globalThis.polarClient.products.list({
         organizationId: globalThis.polarOrganizationId,
@@ -27,11 +29,17 @@ export async function downloadStoreFromCloud() {
         organizationId: globalThis.polarOrganizationId,
       }),
     ),
+    fetchPolarIterator(
+      globalThis.polarClient.meters.list({
+        organizationId: globalThis.polarOrganizationId,
+      }),
+    ),
   ])
 
   return {
     products,
     benefits,
+    meters,
   }
 }
 
@@ -64,14 +72,63 @@ export function resolveBenefits(
   })
 }
 
-export function toProductPayload(product: ProductCreateDefinition) {
+export function resolveMeter(
+  ownerKind: "product" | "benefit",
+  ownerName: string,
+  meterKey: string,
+  metersByKey: Map<string, Meter>,
+): Meter {
+  const meter = metersByKey.get(meterKey)
+  if (!meter) {
+    throw new Error(`Unknown meter key '${meterKey}' on ${ownerKind} '${ownerName}'`)
+  }
+  return meter
+}
+
+export function toBenefitPayload(
+  benefit: BenefitCreateDefinition,
+  metersByKey: Map<string, Meter>,
+): BenefitCreate {
+  if (benefit.type !== "meter_credit") {
+    return benefit
+  }
+
+  const meter = resolveMeter("benefit", benefit.description, benefit.properties.meter, metersByKey)
+  const { meter: _meterKey, ...properties } = benefit.properties
+  return {
+    ...benefit,
+    properties: {
+      ...properties,
+      meterId: meter.id,
+    },
+  }
+}
+
+export function toProductPayload(
+  product: ProductCreateDefinition,
+  metersByKey: Map<string, Meter> = new Map(),
+) {
   const { virtual: _virtual, id: _id, benefits: _benefits, ...payload } = product
-  return payload
+  return {
+    ...payload,
+    prices: payload.prices.map((price) => {
+      if (price.amountType !== "metered_unit") {
+        return price
+      }
+      const meter = resolveMeter("product", product.name, price.meter, metersByKey)
+      const { meter: _meterKey, ...rest } = price
+      return {
+        ...rest,
+        meterId: meter.id,
+      }
+    }),
+  }
 }
 
 export function mapVirtualProduct(
   { virtual: _virtual, id, benefits: benefitKeys, ...product }: VirtualProductDefinition,
   benefitsByKey: Map<string, Benefit> = new Map(),
+  metersByKey: Map<string, Meter> = new Map(),
 ): Product {
   const productId = id ?? String(product.metadata.key)
   return {
@@ -143,7 +200,8 @@ export function mapVirtualProduct(
             modifiedAt: null,
             source: "catalog",
           } satisfies ProductPriceCustom
-        case "metered_unit":
+        case "metered_unit": {
+          const polarMeter = resolveMeter("product", product.name, price.meter, metersByKey)
           return {
             id: crypto.randomUUID(),
             amountType: price.amountType,
@@ -151,20 +209,21 @@ export function mapVirtualProduct(
             priceCurrency: price.priceCurrency ?? "usd",
             taxBehavior: price.taxBehavior ?? null,
             meter: {
-              id: crypto.randomUUID(),
-              name: "usage base",
-              unit: "scalar",
-              customLabel: null,
-              customMultiplier: null,
+              id: polarMeter.id,
+              name: polarMeter.name,
+              unit: polarMeter.unit,
+              customLabel: polarMeter.customLabel ?? null,
+              customMultiplier: polarMeter.customMultiplier ?? null,
             },
-            meterId: crypto.randomUUID(),
+            meterId: polarMeter.id,
             productId,
-            unitAmount: "1",
+            unitAmount: String(price.unitAmount),
             isArchived: false,
             createdAt: new Date(),
             modifiedAt: null,
             source: "catalog",
           } satisfies ProductPriceMeteredUnit
+        }
         case "seat_based":
           return {
             id: crypto.randomUUID(),

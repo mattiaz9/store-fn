@@ -1,20 +1,24 @@
 import { mkdtemp, readFile, rm } from "fs/promises"
 import { tmpdir } from "os"
 import { join } from "path"
-import type { Polar } from "@polar-sh/sdk"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
-import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
-import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import { createStoreFn } from "../src/index.js"
-import { mapVirtualProduct, resolveBenefits, toProductPayload, writeProductsToFile } from "../src/lib.js"
-import type { ProductCreateDefinition } from "../src/types.js"
 import {
-  getErrorCode,
-  getErrorMessage,
-  getErrorStack,
-  toCamelCase,
-} from "../src/utils.js"
+  mapVirtualProduct,
+  resolveBenefits,
+  resolveMeter,
+  toBenefitPayload,
+  toProductPayload,
+  writeProductsToFile,
+} from "../src/lib.js"
+import { getErrorCode, getErrorMessage, getErrorStack, toCamelCase } from "../src/utils.js"
+
+import type { ProductCreateDefinition } from "../src/types.js"
+import type { Polar } from "@polar-sh/sdk"
+import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
+import type { Meter } from "@polar-sh/sdk/models/components/meter.js"
+import type { Product } from "@polar-sh/sdk/models/components/product.js"
 
 function stubPolarClient(): Polar {
   return {} as Polar
@@ -42,6 +46,26 @@ function stubCustomBenefit(key: string, id = `ben_${key}`): Benefit {
     visibility: "public",
     properties: { note: null },
     visibilityConfigurable: true,
+  }
+}
+
+function stubMeter(key: string, id = `meter_${key}`): Meter {
+  return {
+    id,
+    createdAt: new Date(),
+    modifiedAt: null,
+    name: key,
+    unit: "custom",
+    customLabel: "invocation",
+    customMultiplier: null,
+    filter: {
+      conjunction: "and",
+      clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+    },
+    aggregation: { func: "count" },
+    metadata: { key },
+    organizationId: "org_test",
+    archivedAt: null,
   }
 }
 
@@ -84,6 +108,9 @@ function createMemoryPolar() {
         Object.assign(existing, requestBody)
         return existing
       },
+    },
+    meters: {
+      list: () => asPageIterator([]),
     },
     products: {
       list: () => asPageIterator(products),
@@ -384,6 +411,62 @@ describe("resolveBenefits", () => {
   })
 })
 
+describe("resolveMeter", () => {
+  const invocations = stubMeter("invocations")
+  const byKey = new Map<string, Meter>([["invocations", invocations]])
+
+  it("resolves a key to a Polar meter", () => {
+    expect(resolveMeter("product", "Pro Plan", "invocations", byKey)).toBe(invocations)
+  })
+
+  it("throws with product name and key when a key is unknown", () => {
+    expect(() => resolveMeter("product", "Pro Plan", "missing", byKey)).toThrow(
+      "Unknown meter key 'missing' on product 'Pro Plan'",
+    )
+  })
+
+  it("throws with benefit description and key when a key is unknown", () => {
+    expect(() => resolveMeter("benefit", "1,000 included", "missing", byKey)).toThrow(
+      "Unknown meter key 'missing' on benefit '1,000 included'",
+    )
+  })
+})
+
+describe("toBenefitPayload", () => {
+  const invocations = stubMeter("invocations", "meter_polar")
+  const byKey = new Map<string, Meter>([["invocations", invocations]])
+
+  it("rewrites meter_credit meter to Polar meterId on a copy", () => {
+    const stored = {
+      type: "meter_credit" as const,
+      description: "1,000 invocations included",
+      properties: { meter: "invocations", units: 1000, rollover: false },
+      metadata: { key: "included-invocations" },
+    }
+    const payload = toBenefitPayload(stored, byKey)
+
+    expect(payload.type).toBe("meter_credit")
+    if (payload.type === "meter_credit") {
+      expect(payload.properties.meterId).toBe("meter_polar")
+      expect(payload.properties).not.toHaveProperty("meter")
+      expect(payload.properties.units).toBe(1000)
+    }
+    expect(stored.properties.meter).toBe("invocations")
+    expect(stored.properties).not.toHaveProperty("meterId")
+  })
+
+  it("leaves non-meter_credit benefits unchanged", () => {
+    const stored = {
+      type: "custom" as const,
+      description: "Priority support",
+      properties: { note: "hi" },
+      metadata: { key: "priority-support" },
+    }
+    const payload = toBenefitPayload(stored, byKey)
+    expect(payload).toEqual(stored)
+  })
+})
+
 describe("toProductPayload", () => {
   it("strips virtual, id, and benefits from the Polar payload", () => {
     const payload = toProductPayload(
@@ -401,6 +484,35 @@ describe("toProductPayload", () => {
     expect(payload).not.toHaveProperty("benefits")
     expect(payload.name).toBe("Pro Plan")
     expect(payload.metadata.key).toBe("pro")
+  })
+
+  it("rewrites metered price meter to Polar meterId on a copy", () => {
+    const invocations = stubMeter("invocations", "meter_polar")
+    const stored = baseDefinition({
+      name: "Pro Plan",
+      metadata: { key: "pro" },
+      prices: [
+        {
+          amountType: "metered_unit",
+          meter: "invocations",
+          unitAmount: 10,
+          priceCurrency: "usd",
+        },
+      ],
+    })
+    const payload = toProductPayload(stored, new Map([["invocations", invocations]]))
+    const price = payload.prices[0]
+
+    expect(price.amountType).toBe("metered_unit")
+    if (price.amountType === "metered_unit") {
+      expect(price.meterId).toBe("meter_polar")
+      expect(price).not.toHaveProperty("meter")
+    }
+    const storedPrice = stored.prices[0]
+    if (storedPrice.amountType === "metered_unit") {
+      expect(storedPrice.meter).toBe("invocations")
+      expect(storedPrice).not.toHaveProperty("meterId")
+    }
   })
 })
 
@@ -482,7 +594,8 @@ describe("mapVirtualProduct", () => {
     }
   })
 
-  it("maps metered unit prices with meter defaults", () => {
+  it("maps metered unit prices from the synced meter map", () => {
+    const invocations = stubMeter("invocations", "meter_polar")
     const product = mapVirtualProduct(
       baseDefinition({
         name: "Metered Virtual",
@@ -495,26 +608,29 @@ describe("mapVirtualProduct", () => {
           {
             amountType: "metered_unit",
             meter: "invocations",
-            unitAmount: "1.5",
+            unitAmount: 10,
             capAmount: 5000,
             priceCurrency: "usd",
           },
         ],
       }),
+      new Map(),
+      new Map([["invocations", invocations]]),
     )
 
-    expect(product.isRecurring).toBe(true)
-    expect(product.recurringInterval).toBe("month")
     expect(product.meterInterval).toBe("month")
     expect(product.meterIntervalCount).toBe(1)
 
     const price = product.prices[0]
     expect(price.amountType).toBe("metered_unit")
     if (price.amountType === "metered_unit") {
+      expect(price.meterId).toBe("meter_polar")
+      expect(price.meter.id).toBe("meter_polar")
+      expect(price.meter.name).toBe("invocations")
+      expect(price.meter.unit).toBe("custom")
+      expect(price.meter.customLabel).toBe("invocation")
+      expect(price.unitAmount).toBe("10")
       expect(price.capAmount).toBe(5000)
-      expect(price.meter.unit).toBe("scalar")
-      expect(price.meter.customLabel).toBeNull()
-      expect(price.meter.customMultiplier).toBeNull()
     }
   })
 
