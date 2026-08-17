@@ -2,12 +2,15 @@
 
 ### Features
 
-- Add `defineBenefit` and attach Polar benefits to products by key on `push()`
+- Add `defineMeter` and sync Polar meters by `metadata.key` on `push()`
+- Let metered prices and `meter_credit` benefits reference a meter by store-fn key
+- Convert metered `unitAmount` and `capAmount` from dollars
 
 ### Breaking changes
 
-- `push()` now replaces Polar dashboard benefit attachments for every non-virtual product in the store config. Omitted `benefits` means an empty list.
+- Metered prices use `meter` (store-fn key) instead of Polar `meterId`
+- `meter_credit` benefits use `properties.meter` instead of `properties.meterId`
 
 ### Fixes
 
-- Keep Polar benefit create/update unions discriminated and map custom `note` on update
+- Virtual metered products resolve the synced Polar meter instead of a random stub
