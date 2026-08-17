@@ -141,8 +141,12 @@ function createStoreFn(options: CreateStoreFnOptions) {
     }
 
     const benefitsByKey = new Map<string, Benefit>()
+    const benefitsWithPayloads = definedBenefits.map((benefit) => ({
+      benefit,
+      payload: toBenefitPayload(benefit, metersByKey),
+    }))
 
-    for (const benefit of definedBenefits) {
+    for (const { benefit, payload: benefitPayload } of benefitsWithPayloads) {
       if (!benefit.metadata?.key) {
         throw new Error(`Missing 'key' in benefit ${benefit.description}`)
       }
@@ -150,7 +154,6 @@ function createStoreFn(options: CreateStoreFnOptions) {
       const existingBenefit = polarStore.benefits.find(
         (item) => item.metadata.key === benefit.metadata.key,
       )
-      const benefitPayload = toBenefitPayload(benefit, metersByKey)
 
       if (existingBenefit) {
         const { organizationId: _organizationId, ...requestBody } = benefitPayload
@@ -175,13 +178,18 @@ function createStoreFn(options: CreateStoreFnOptions) {
       }
     }
 
-    for (const product of definedProducts) {
+    const productsWithPayloads = definedProducts.map((product) => ({
+      product,
+      payload: toProductPayload(product, metersByKey),
+    }))
+
+    for (const { product } of productsWithPayloads) {
       resolveBenefits(product.name, product.benefits, benefitsByKey)
     }
 
     const updatedProducts: Product[] = []
 
-    for (const product of definedProducts) {
+    for (const { product, payload: productPayload } of productsWithPayloads) {
       if (!product.metadata?.key) {
         throw new Error(`Missing 'key' in product ${product.name}`)
       }
@@ -195,8 +203,6 @@ function createStoreFn(options: CreateStoreFnOptions) {
       const existingProduct = polarStore.products.find(
         (p) => p.metadata.key === product.metadata?.key,
       )
-
-      const productPayload = toProductPayload(product, metersByKey)
 
       const upsertedProduct = existingProduct
         ? await polarClient.products.update({

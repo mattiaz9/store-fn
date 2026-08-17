@@ -957,6 +957,12 @@ describe("push meters", () => {
     const store = createStoreFn({ client, organizationId: "org_test" })
 
     store.defineBenefit({
+      key: "priority-support",
+      type: "custom",
+      description: "Priority support",
+      properties: { note: "Available 24/7" },
+    })
+    store.defineBenefit({
       key: "included-invocations",
       type: "meter_credit",
       description: "1,000 invocations included",
@@ -980,6 +986,11 @@ describe("push meters", () => {
     const { client, products } = createMemoryPolar()
     const store = createStoreFn({ client, organizationId: "org_test" })
 
+    store.defineProduct({
+      key: "starter",
+      name: "Starter Plan",
+      prices: [{ amountType: "fixed", priceAmount: 5 }],
+    })
     store.defineProduct({
       key: "pro",
       name: "Pro Plan",

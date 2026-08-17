@@ -714,7 +714,7 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
       const updated = await second.push()
       const updatedProduct = updated.updatedProducts[0]
       expect(updatedProduct).toBeDefined()
-      const updatedMetered = updatedProduct!.prices.find(
+      const updatedMetered = updatedProduct?.prices.find(
         (price) => price.amountType === "metered_unit",
       )
       expect(updatedMetered).toBeDefined()
