@@ -19,6 +19,7 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
   let store: ReturnType<typeof createStoreFn>
   const createdProductIds: string[] = []
   const createdBenefitIds: string[] = []
+  const createdMeterIds: string[] = []
 
   beforeAll(() => {
     if (!POLAR_API_KEY || !POLAR_ORGANIZATION_ID) {
@@ -62,6 +63,17 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
         await polarClient.benefits.delete({ id: benefitId })
       } catch (error) {
         console.error(`Error deleting benefit ${benefitId}:`, error)
+      }
+    }
+
+    for (const meterId of createdMeterIds) {
+      try {
+        await polarClient.meters.update({
+          id: meterId,
+          meterUpdate: { isArchived: true },
+        })
+      } catch (error) {
+        console.error(`Error archiving meter ${meterId}:`, error)
       }
     }
   })
@@ -558,6 +570,209 @@ describe.skipIf(!hasPolarEnv)("store-fn", () => {
       try {
         await expect(store.push()).rejects.toThrow(
           "Unknown benefit key 'does-not-exist' on product 'Test Missing Benefit Product'",
+        )
+      } finally {
+        const products = await fetchPolarIterator(
+          polarClient.products.list({
+            organizationId: POLAR_ORGANIZATION_ID,
+          }),
+        )
+        const created = products.find((p) => p.metadata?.key === productKey)
+        if (created?.id) createdProductIds.push(created.id)
+      }
+    }, 30000)
+  })
+
+  describe("meters", () => {
+    it("creates a meter, credits it on a benefit, and bills overage on a product", async () => {
+      const store = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      const meterKey = `test-meter-${Date.now()}`
+      const benefitKey = `test-meter-credit-${Date.now()}`
+      const productKey = `test-meter-product-${Date.now()}`
+
+      store.defineMeter({
+        key: meterKey,
+        name: `Test Invocations ${Date.now()}`,
+        unit: "custom",
+        customLabel: "invocation",
+        filter: {
+          conjunction: "and",
+          clauses: [{ property: "name", operator: "eq", value: `invocation.${meterKey}` }],
+        },
+        aggregation: { func: "count" },
+      })
+      store.defineBenefit({
+        key: benefitKey,
+        type: "meter_credit",
+        description: "Test 1000 included",
+        properties: { meter: meterKey, units: 1000, rollover: false },
+      })
+      store.defineProduct({
+        key: productKey,
+        name: "Test Metered Plan",
+        recurringInterval: "month",
+        recurringIntervalCount: 1,
+        prices: [
+          { amountType: "fixed", priceAmount: 29.99, priceCurrency: "usd" },
+          {
+            amountType: "metered_unit",
+            meter: meterKey,
+            unitAmount: 0.1,
+            priceCurrency: "usd",
+          },
+        ],
+        benefits: [benefitKey],
+      })
+
+      const result = await store.push()
+      const product = result.updatedProducts[0]
+      if (product?.id) createdProductIds.push(product.id)
+      if (product?.benefits[0]?.id) createdBenefitIds.push(product.benefits[0].id)
+
+      const metered = product?.prices.find((price) => price.amountType === "metered_unit")
+      expect(metered?.amountType).toBe("metered_unit")
+      if (metered?.amountType === "metered_unit") {
+        createdMeterIds.push(metered.meterId)
+        expect(metered.meterId).toBeTruthy()
+        expect(product?.benefits[0]?.type).toBe("meter_credit")
+        if (product?.benefits[0]?.type === "meter_credit") {
+          expect(product.benefits[0].properties.meterId).toBe(metered.meterId)
+        }
+      }
+    }, 30000)
+
+    it("updates a meter name on a second push", async () => {
+      const meterKey = `test-meter-update-${Date.now()}`
+      const productKey = `test-meter-update-product-${Date.now()}`
+      const filter = {
+        conjunction: "and" as const,
+        clauses: [{ property: "name", operator: "eq" as const, value: `invocation.${meterKey}` }],
+      }
+
+      const first = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      first.defineMeter({
+        key: meterKey,
+        name: "Original Meter",
+        unit: "scalar",
+        filter,
+        aggregation: { func: "count" },
+      })
+      first.defineProduct({
+        key: productKey,
+        name: "Test Meter Update Product",
+        recurringInterval: "month",
+        recurringIntervalCount: 1,
+        prices: [
+          {
+            amountType: "metered_unit",
+            meter: meterKey,
+            unitAmount: 0.1,
+            priceCurrency: "usd",
+          },
+        ],
+      })
+      const created = await first.push()
+      if (created.updatedProducts[0]?.id) createdProductIds.push(created.updatedProducts[0].id)
+      const createdMetered = created.updatedProducts[0]?.prices.find(
+        (price) => price.amountType === "metered_unit",
+      )
+      if (createdMetered?.amountType === "metered_unit") {
+        createdMeterIds.push(createdMetered.meterId)
+      }
+
+      const second = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      second.defineMeter({
+        key: meterKey,
+        name: "Updated Meter",
+        unit: "scalar",
+        filter,
+        aggregation: { func: "count" },
+      })
+      second.defineProduct({
+        key: productKey,
+        name: "Test Meter Update Product",
+        recurringInterval: "month",
+        recurringIntervalCount: 1,
+        prices: [
+          {
+            amountType: "metered_unit",
+            meter: meterKey,
+            unitAmount: 0.1,
+            priceCurrency: "usd",
+          },
+        ],
+      })
+      const updated = await second.push()
+      const updatedMetered = updated.updatedProducts[0]?.prices.find(
+        (price) => price.amountType === "metered_unit",
+      )
+      if (updatedMetered?.amountType === "metered_unit") {
+        expect(updatedMetered.meter.name).toBe("Updated Meter")
+      }
+    }, 30000)
+
+    it("leaves Polar meters that are not in the store config", async () => {
+      const orphan = await polarClient.meters.create({
+        name: `Orphan meter ${Date.now()}`,
+        unit: "scalar",
+        filter: {
+          conjunction: "and",
+          clauses: [{ property: "name", operator: "eq", value: `orphan.${Date.now()}` }],
+        },
+        aggregation: { func: "count" },
+      })
+      createdMeterIds.push(orphan.id)
+
+      const store = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      store.defineProduct({
+        key: `test-orphan-meter-product-${Date.now()}`,
+        name: "Test Orphan Meter Product",
+        prices: [{ amountType: "fixed", priceAmount: 5, priceCurrency: "usd" }],
+      })
+      const result = await store.push()
+      if (result.updatedProducts[0]?.id) createdProductIds.push(result.updatedProducts[0].id)
+
+      const fetched = await polarClient.meters.get({ id: orphan.id })
+      expect(fetched.id).toBe(orphan.id)
+      expect(fetched.archivedAt ?? null).toBeNull()
+    }, 30000)
+
+    it("throws when a product references a meter key that was not defined", async () => {
+      const store = createStoreFn({
+        client: polarClient,
+        organizationId: POLAR_ORGANIZATION_ID,
+      })
+      const productKey = `test-missing-meter-${Date.now()}`
+      store.defineProduct({
+        key: productKey,
+        name: "Test Missing Meter Product",
+        recurringInterval: "month",
+        recurringIntervalCount: 1,
+        prices: [
+          {
+            amountType: "metered_unit",
+            meter: "does-not-exist",
+            unitAmount: 0.1,
+            priceCurrency: "usd",
+          },
+        ],
+      })
+
+      try {
+        await expect(store.push()).rejects.toThrow(
+          "Unknown meter key 'does-not-exist' on product 'Test Missing Meter Product'",
         )
       } finally {
         const products = await fetchPolarIterator(
