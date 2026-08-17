@@ -1,3 +1,4 @@
+import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
 import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import type { ProductPrice } from "@polar-sh/sdk/models/components/productprice.js"
 import type { ProductPriceCustom } from "@polar-sh/sdk/models/components/productpricecustom.js"
@@ -45,11 +46,33 @@ function toSeatTiersOutput(seatTiers: ProductPriceSeatTiersInput): ProductPriceS
   }
 }
 
-export function mapVirtualProduct({
-  virtual: _virtual,
-  id,
-  ...product
-}: VirtualProductDefinition): Product {
+export function resolveBenefits(
+  productName: string,
+  benefitKeys: string[] | undefined,
+  benefitsByKey: Map<string, Benefit>,
+): Benefit[] {
+  if (!benefitKeys?.length) {
+    return []
+  }
+
+  return benefitKeys.map((key) => {
+    const benefit = benefitsByKey.get(key)
+    if (!benefit) {
+      throw new Error(`Unknown benefit key '${key}' on product '${productName}'`)
+    }
+    return benefit
+  })
+}
+
+export function toProductPayload(product: ProductCreateDefinition) {
+  const { virtual: _virtual, id: _id, benefits: _benefits, ...payload } = product
+  return payload
+}
+
+export function mapVirtualProduct(
+  { virtual: _virtual, id, benefits: benefitKeys, ...product }: VirtualProductDefinition,
+  benefitsByKey: Map<string, Benefit> = new Map(),
+): Product {
   const productId = id ?? String(product.metadata.key)
   return {
     ...product,
@@ -58,7 +81,7 @@ export function mapVirtualProduct({
     metadata: product.metadata ?? {},
     isRecurring: !!product.recurringInterval,
     attachedCustomFields: [],
-    benefits: [],
+    benefits: resolveBenefits(product.name, benefitKeys, benefitsByKey),
     medias: (product.medias ?? []).map((media) => ({
       id: crypto.randomUUID(),
       organizationId: "",

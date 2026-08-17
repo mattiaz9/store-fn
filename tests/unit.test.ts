@@ -4,8 +4,9 @@ import { join } from "path"
 import type { Polar } from "@polar-sh/sdk"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
+import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
 import { createStoreFn } from "../src/index.js"
-import { mapVirtualProduct, writeProductsToFile } from "../src/lib.js"
+import { mapVirtualProduct, resolveBenefits, toProductPayload, writeProductsToFile } from "../src/lib.js"
 import type { ProductCreateDefinition } from "../src/types.js"
 import {
   getErrorCode,
@@ -22,6 +23,24 @@ function baseDefinition(overrides: ProductCreateDefinition): ProductCreateDefini
   return {
     virtual: true,
     ...overrides,
+  }
+}
+
+function stubCustomBenefit(key: string, id = `ben_${key}`): Benefit {
+  return {
+    id,
+    createdAt: new Date(),
+    modifiedAt: null,
+    type: "custom",
+    description: key,
+    selectable: true,
+    deletable: true,
+    isDeleted: false,
+    organizationId: "org_test",
+    metadata: { key },
+    visibility: "public",
+    properties: { note: null },
+    visibilityConfigurable: true,
   }
 }
 
@@ -174,6 +193,46 @@ describe("defineBenefit", () => {
   })
 })
 
+describe("resolveBenefits", () => {
+  const support = stubCustomBenefit("priority-support")
+  const byKey = new Map<string, Benefit>([["priority-support", support]])
+
+  it("returns an empty list when benefits are omitted or empty", () => {
+    expect(resolveBenefits("Pro Plan", undefined, byKey)).toEqual([])
+    expect(resolveBenefits("Pro Plan", [], byKey)).toEqual([])
+  })
+
+  it("resolves keys to Polar benefits", () => {
+    expect(resolveBenefits("Pro Plan", ["priority-support"], byKey)).toEqual([support])
+  })
+
+  it("throws with product name and key when a key is unknown", () => {
+    expect(() => resolveBenefits("Pro Plan", ["missing"], byKey)).toThrow(
+      "Unknown benefit key 'missing' on product 'Pro Plan'",
+    )
+  })
+})
+
+describe("toProductPayload", () => {
+  it("strips virtual, id, and benefits from the Polar payload", () => {
+    const payload = toProductPayload(
+      baseDefinition({
+        id: "virtual-id",
+        name: "Pro Plan",
+        metadata: { key: "pro" },
+        prices: [{ amountType: "fixed", priceAmount: 100 }],
+        benefits: ["priority-support"],
+      }),
+    )
+
+    expect(payload).not.toHaveProperty("virtual")
+    expect(payload).not.toHaveProperty("id")
+    expect(payload).not.toHaveProperty("benefits")
+    expect(payload.name).toBe("Pro Plan")
+    expect(payload.metadata.key).toBe("pro")
+  })
+})
+
 describe("mapVirtualProduct", () => {
   it("uses explicit id when provided", () => {
     const product = mapVirtualProduct(
@@ -315,6 +374,33 @@ describe("mapVirtualProduct", () => {
       expect(price.seatTiers.maximumSeats).toBeNull()
       expect(price.seatTiers.tiers).toHaveLength(2)
     }
+  })
+
+  it("resolves attached benefit keys from the synced map", () => {
+    const support = stubCustomBenefit("priority-support")
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Virtual Pro",
+        metadata: { key: "virtual-pro" },
+        prices: [{ amountType: "fixed", priceAmount: 0 }],
+        benefits: ["priority-support"],
+      }),
+      new Map([["priority-support", support]]),
+    )
+
+    expect(product.benefits).toEqual([support])
+  })
+
+  it("uses an empty benefits list when keys are omitted", () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Virtual Free",
+        metadata: { key: "virtual-free" },
+        prices: [{ amountType: "fixed", priceAmount: 0 }],
+      }),
+    )
+
+    expect(product.benefits).toEqual([])
   })
 })
 
