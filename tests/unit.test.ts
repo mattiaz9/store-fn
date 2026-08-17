@@ -5,6 +5,7 @@ import type { Polar } from "@polar-sh/sdk"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
 import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
+import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import { createStoreFn } from "../src/index.js"
 import { mapVirtualProduct, resolveBenefits, toProductPayload, writeProductsToFile } from "../src/lib.js"
 import type { ProductCreateDefinition } from "../src/types.js"
@@ -42,6 +43,86 @@ function stubCustomBenefit(key: string, id = `ben_${key}`): Benefit {
     properties: { note: null },
     visibilityConfigurable: true,
   }
+}
+
+function asPageIterator<T>(items: T[]) {
+  return Promise.resolve(
+    (async function* () {
+      yield {
+        result: {
+          items,
+          pagination: { totalCount: items.length, maxPage: 1 },
+        },
+      }
+    })(),
+  )
+}
+
+function createMemoryPolar() {
+  const benefits: Benefit[] = []
+  const products: Array<Product & { metadata: { key?: string } }> = []
+  let nextId = 1
+
+  const client = {
+    benefits: {
+      list: () => asPageIterator(benefits),
+      create: async (payload: { metadata?: { key?: string }; description: string; type: string }) => {
+        const created = stubCustomBenefit(String(payload.metadata?.key), `ben_${nextId++}`)
+        Object.assign(created, payload, { id: created.id })
+        benefits.push(created)
+        return created
+      },
+      update: async ({
+        id,
+        requestBody,
+      }: {
+        id: string
+        requestBody: { description?: string; metadata?: { key?: string } }
+      }) => {
+        const existing = benefits.find((benefit) => benefit.id === id)
+        if (!existing) throw new Error(`missing benefit ${id}`)
+        Object.assign(existing, requestBody)
+        return existing
+      },
+    },
+    products: {
+      list: () => asPageIterator(products),
+      create: async (payload: { name: string; metadata?: { key?: string } }) => {
+        const created = {
+          id: `prod_${nextId++}`,
+          name: payload.name,
+          metadata: payload.metadata ?? {},
+          benefits: [] as Benefit[],
+        }
+        products.push(created as (typeof products)[number])
+        return created
+      },
+      update: async ({ id, productUpdate }: { id: string; productUpdate: { name?: string } }) => {
+        const existing = products.find((product) => product.id === id)
+        if (!existing) throw new Error(`missing product ${id}`)
+        Object.assign(existing, productUpdate)
+        return existing
+      },
+      updateBenefits: async ({
+        id,
+        productBenefitsUpdate,
+      }: {
+        id: string
+        productBenefitsUpdate: { benefits: string[] }
+      }) => {
+        const existing = products.find((product) => product.id === id)
+        if (!existing) throw new Error(`missing product ${id}`)
+        existing.benefits = productBenefitsUpdate.benefits.map((benefitId) => {
+          const benefit = benefits.find((item) => item.id === benefitId)
+          if (!benefit) throw new Error(`missing benefit id ${benefitId}`)
+          return benefit
+        })
+        return existing
+      },
+    },
+  }
+
+  return { client: client as unknown as Polar, benefits, products }
 }
 
 describe("toCamelCase", () => {
@@ -434,5 +515,123 @@ describe("writeProductsToFile", () => {
     expect(content).toContain("exportedProductProduct")
     expect(content).toContain("Exported Product")
     expect(content).toContain("as const satisfies Product")
+  })
+})
+
+describe("push benefits", () => {
+  it("creates a benefit and attaches it by key", async () => {
+    const { client, benefits, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineBenefit({
+      key: "priority-support",
+      type: "custom",
+      description: "Priority support",
+      properties: { note: null },
+    })
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+      benefits: ["priority-support"],
+    })
+
+    const result = await store.push()
+
+    expect(benefits).toHaveLength(1)
+    expect(benefits[0]?.metadata.key).toBe("priority-support")
+    expect(products[0]?.benefits.map((benefit) => benefit.metadata.key)).toEqual([
+      "priority-support",
+    ])
+    expect(result.updatedProducts[0]?.benefits[0]?.id).toBe(benefits[0]?.id)
+  })
+
+  it("updates an existing benefit by metadata.key and does not delete orphans", async () => {
+    const { client, benefits } = createMemoryPolar()
+    benefits.push(stubCustomBenefit("priority-support", "ben_existing"))
+    benefits.push(stubCustomBenefit("orphan", "ben_orphan"))
+
+    const store = createStoreFn({ client, organizationId: "org_test" })
+    store.defineBenefit({
+      key: "priority-support",
+      type: "custom",
+      description: "Priority support plus",
+      properties: { note: null },
+    })
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+    })
+
+    await store.push()
+
+    expect(benefits.map((benefit) => benefit.id)).toEqual(["ben_existing", "ben_orphan"])
+    expect(benefits[0]?.description).toBe("Priority support plus")
+  })
+
+  it("replaces attachments with an empty list when benefits are omitted", async () => {
+    const { client, benefits, products } = createMemoryPolar()
+    const existingBenefit = stubCustomBenefit("priority-support", "ben_existing")
+    benefits.push(existingBenefit)
+    products.push({
+      id: "prod_existing",
+      name: "Pro Plan",
+      metadata: { key: "pro" },
+      benefits: [existingBenefit],
+    } as (typeof products)[number])
+
+    const store = createStoreFn({ client, organizationId: "org_test" })
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+    })
+
+    const result = await store.push()
+
+    expect(result.updatedProducts[0]?.benefits).toEqual([])
+  })
+
+  it("throws before attach when a product references an unknown key", async () => {
+    const { client, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+      benefits: ["missing"],
+    })
+
+    await expect(store.push()).rejects.toThrow(
+      "Unknown benefit key 'missing' on product 'Pro Plan'",
+    )
+    expect(products[0]?.benefits ?? []).toEqual([])
+  })
+
+  it("maps virtual products with synced Polar benefits", async () => {
+    const { client, benefits, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineBenefit({
+      key: "priority-support",
+      type: "custom",
+      description: "Priority support",
+      properties: { note: null },
+    })
+    store.defineProduct({
+      virtual: true,
+      key: "local-pro",
+      name: "Local Pro",
+      prices: [{ amountType: "fixed", priceAmount: 0 }],
+      benefits: ["priority-support"],
+    })
+
+    const result = await store.push()
+
+    expect(products).toHaveLength(0)
+    expect(result.updatedProducts[0]?.benefits[0]?.metadata.key).toBe("priority-support")
+    expect(result.updatedProducts[0]?.benefits[0]?.id).toBe(benefits[0]?.id)
   })
 })

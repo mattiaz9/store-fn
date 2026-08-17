@@ -1,8 +1,15 @@
 import type { Polar } from "@polar-sh/sdk"
+import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
 import type { Product } from "@polar-sh/sdk/models/components/product.js"
 import pc from "picocolors"
 
-import { downloadStoreFromCloud, mapVirtualProduct, writeProductsToFile } from "./lib"
+import {
+  downloadStoreFromCloud,
+  mapVirtualProduct,
+  resolveBenefits,
+  toProductPayload,
+  writeProductsToFile,
+} from "./lib"
 import type {
   BenefitCreateDefinition,
   BenefitDefinition,
@@ -76,6 +83,33 @@ function createStoreFn(options: CreateStoreFnOptions) {
 
     const polarStore = await downloadStoreFromCloud()
 
+    const benefitsByKey = new Map<string, Benefit>()
+
+    for (const benefit of definedBenefits) {
+      if (!benefit.metadata?.key) {
+        throw new Error(`Missing 'key' in benefit ${benefit.description}`)
+      }
+
+      const existingBenefit = polarStore.benefits.find(
+        (item) => item.metadata.key === benefit.metadata.key,
+      )
+
+      if (existingBenefit) {
+        const updatedBenefit = await polarClient.benefits.update({
+          id: existingBenefit.id,
+          requestBody: benefit,
+        })
+        benefitsByKey.set(benefit.metadata.key, updatedBenefit)
+
+        console.log(pc.green(`Updated benefit '${pc.bold(benefit.description)}'`))
+      } else {
+        const createdBenefit = await polarClient.benefits.create(benefit)
+        benefitsByKey.set(benefit.metadata.key, createdBenefit)
+
+        console.log(pc.cyan(`Created new benefit '${pc.bold(benefit.description)}'`))
+      }
+    }
+
     const updatedProducts: Product[] = []
 
     for (const product of definedProducts) {
@@ -84,7 +118,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
       }
 
       if (product.virtual) {
-        const virtualProduct = mapVirtualProduct(product)
+        const virtualProduct = mapVirtualProduct(product, benefitsByKey)
         updatedProducts.push(virtualProduct)
         continue
       }
@@ -93,22 +127,29 @@ function createStoreFn(options: CreateStoreFnOptions) {
         (p) => p.metadata.key === product.metadata?.key,
       )
 
-      const { virtual: _virtual, id: _id, ...productPayload } = product
+      const productPayload = toProductPayload(product)
+
+      const upsertedProduct = existingProduct
+        ? await polarClient.products.update({
+            id: existingProduct.id,
+            productUpdate: productPayload,
+          })
+        : await polarClient.products.create(productPayload)
 
       if (existingProduct) {
-        const updatedProduct = await polarClient.products.update({
-          id: existingProduct.id,
-          productUpdate: productPayload,
-        })
-        updatedProducts.push(updatedProduct)
-
         console.log(pc.green(`Updated product '${pc.bold(product.name)}'`))
       } else {
-        const createdProduct = await polarClient.products.create(productPayload)
-        updatedProducts.push(createdProduct)
-
         console.log(pc.cyan(`Created new product '${pc.bold(product.name)}'`))
       }
+
+      const attached = resolveBenefits(product.name, product.benefits, benefitsByKey)
+      const productWithBenefits = await polarClient.products.updateBenefits({
+        id: upsertedProduct.id,
+        productBenefitsUpdate: {
+          benefits: attached.map((benefit) => benefit.id),
+        },
+      })
+      updatedProducts.push(productWithBenefits)
     }
 
     // @ts-expect-error -- clear client after sync completes
