@@ -15,11 +15,19 @@ export type MeteredPriceDefinition = Omit<ProductPriceMeteredUnitCreate, "meterI
   meter: string
 }
 
+/** Polar stores free prices as `amountType: "fixed"` with `priceAmount: 0`. */
+export type FreePriceDefinition = {
+  amountType: "free"
+  priceCurrency?: ProductPriceFixedCreate["priceCurrency"]
+  taxBehavior?: ProductPriceFixedCreate["taxBehavior"]
+}
+
 export type ProductPriceDefinition =
   | ProductPriceCustomCreate
   | ProductPriceFixedCreate
   | ProductPriceSeatBasedCreate
   | MeteredPriceDefinition
+  | FreePriceDefinition
 
 type WithStoreFields<T, TMeta extends StoreMetadata> = Omit<T, "metadata" | "prices"> & {
   virtual?: boolean

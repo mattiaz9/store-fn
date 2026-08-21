@@ -275,6 +275,17 @@ describe("defineProduct", () => {
     }
   })
 
+  it("accepts amountType free without a priceAmount", () => {
+    const product = store.defineProduct({
+      key: "free-amount-type",
+      name: "Free Amount Type",
+      prices: [{ amountType: "free" }],
+    })
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("free")
+  })
+
   it("stores key in metadata and preserves custom metadata", () => {
     const product = store.defineProduct({
       key: "meta-product",
@@ -541,6 +552,23 @@ describe("toProductPayload", () => {
       expect(storedPrice).not.toHaveProperty("meterId")
     }
   })
+
+  it("maps amountType free to Polar fixed zero cents", () => {
+    const stored = baseDefinition({
+      name: "Hobby Plan",
+      metadata: { key: "hobby" },
+      prices: [{ amountType: "free", priceCurrency: "usd" }],
+    })
+    const payload = toProductPayload(stored)
+    const price = payload.prices[0]
+
+    expect(price).toEqual({
+      amountType: "fixed",
+      priceAmount: 0,
+      priceCurrency: "usd",
+    })
+    expect(stored.prices[0]).toEqual({ amountType: "free", priceCurrency: "usd" })
+  })
 })
 
 describe("mapVirtualProduct", () => {
@@ -572,6 +600,24 @@ describe("mapVirtualProduct", () => {
     )
 
     expect(product.id).toBe("from-key")
+  })
+
+  it("maps amountType free to a zero fixed Polar price", () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Free Virtual",
+        metadata: { key: "free-virtual" },
+        prices: [{ amountType: "free", priceCurrency: "eur" }],
+      }),
+    )
+
+    const price = product.prices[0]
+    expect(price.amountType).toBe("fixed")
+    if (price.amountType === "fixed") {
+      expect(price.priceAmount).toBe(0)
+      expect(price.priceCurrency).toBe("eur")
+      expect(price.productId).toBe("free-virtual")
+    }
   })
 
   it("maps free fixed prices and default currency", () => {
@@ -749,6 +795,33 @@ describe("writeProductsToFile", () => {
     expect(content).toContain("Exported Product")
     expect(content).toContain("as const satisfies Product")
   })
+
+  it("writes Polar entity ids, not store keys", async () => {
+    const productId = "11111111-1111-4111-8111-111111111111"
+    const priceId = "22222222-2222-4222-8222-222222222222"
+    const product = mapVirtualProduct(
+      baseDefinition({
+        id: productId,
+        name: "Hobby Plan",
+        metadata: { key: "pdfgo_hobby" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+      }),
+    )
+    const price = product.prices[0]
+    expect(price).toBeDefined()
+    if (!price) {
+      throw new Error("expected a mapped price")
+    }
+    price.id = priceId
+
+    const outputPath = join(tempDir, "polar-ids.ts")
+    await writeProductsToFile([product], outputPath)
+    const content = await readFile(outputPath, "utf-8")
+
+    expect(content).toContain(productId)
+    expect(content).toContain(priceId)
+    expect(content).not.toMatch(/id: "pdfgo_hobby"/)
+  })
 })
 
 describe("push benefits", () => {
@@ -866,6 +939,60 @@ describe("push benefits", () => {
     expect(products).toHaveLength(0)
     expect(result.updatedProducts[0]?.benefits[0]?.metadata.key).toBe("priority-support")
     expect(result.updatedProducts[0]?.benefits[0]?.id).toBe(benefits[0]?.id)
+  })
+
+  it("sends amountType free to Polar as a zero fixed price", async () => {
+    const { client, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineProduct({
+      key: "hobby",
+      name: "Hobby Plan",
+      prices: [{ amountType: "free" }],
+    })
+
+    await store.push()
+
+    expect(products[0]?.prices).toEqual([{ amountType: "fixed", priceAmount: 0 }])
+  })
+
+  it("returns Polar entity ids instead of store keys", async () => {
+    const { client, meters, benefits, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineMeter({
+      key: "invocations",
+      name: "Invocations",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+      },
+      aggregation: { func: "count" },
+    })
+    store.defineBenefit({
+      key: "included-invocations",
+      type: "meter_credit",
+      description: "Included invocations",
+      properties: { meter: "invocations", units: 100, rollover: false },
+    })
+    store.defineProduct({
+      key: "hobby",
+      name: "Hobby Plan",
+      prices: [{ amountType: "free" }],
+      benefits: ["included-invocations"],
+    })
+
+    const result = await store.push()
+    const product = result.updatedProducts[0]
+
+    expect(product?.id).toBe(products[0]?.id)
+    expect(product?.id).not.toBe("hobby")
+    expect(product?.benefits[0]?.id).toBe(benefits[0]?.id)
+    expect(product?.benefits[0]?.id).not.toBe("included-invocations")
+    expect(meters[0]?.id).not.toBe("invocations")
+    if (product?.benefits[0]?.type === "meter_credit") {
+      expect(product.benefits[0].properties.meterId).toBe(meters[0]?.id)
+    }
   })
 })
 

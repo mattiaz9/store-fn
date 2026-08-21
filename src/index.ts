@@ -12,6 +12,7 @@ import {
 import type {
   BenefitCreateDefinition,
   BenefitDefinition,
+  FreePriceDefinition,
   MeterCreateDefinition,
   MeterDefinition,
   ProductCreateDefinition,
@@ -243,6 +244,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
 export type {
   BenefitCreateDefinition,
   BenefitDefinition,
+  FreePriceDefinition,
   MeterCreateDefinition,
   MeterDefinition,
   ProductCreateDefinition,

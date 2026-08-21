@@ -112,6 +112,14 @@ export function toProductPayload(
   return {
     ...payload,
     prices: payload.prices.map((price) => {
+      if (price.amountType === "free") {
+        return {
+          amountType: "fixed" as const,
+          priceAmount: 0,
+          ...(price.priceCurrency !== undefined ? { priceCurrency: price.priceCurrency } : {}),
+          ...(price.taxBehavior !== undefined ? { taxBehavior: price.taxBehavior } : {}),
+        }
+      }
       if (price.amountType !== "metered_unit") {
         return price
       }
@@ -172,6 +180,19 @@ export function mapVirtualProduct(
       "meterIntervalCount" in product ? (product.meterIntervalCount ?? null) : null,
     prices: product.prices.map((price): ProductPrice => {
       switch (price.amountType) {
+        case "free":
+          return {
+            id: crypto.randomUUID(),
+            amountType: "fixed",
+            priceAmount: 0,
+            priceCurrency: price.priceCurrency ?? "usd",
+            taxBehavior: price.taxBehavior ?? null,
+            isArchived: false,
+            productId,
+            createdAt: new Date(),
+            modifiedAt: null,
+            source: "catalog",
+          } satisfies ProductPriceFixed
         case "fixed":
           return {
             id: crypto.randomUUID(),
