@@ -129,12 +129,17 @@ Defines a meter. Meters are identified by their `key` in metadata.
 - `definition.key` - Unique identifier (stored in metadata)
 - `definition.name` - Shown on invoices and usage
 - `definition.unit` - Optional: `"scalar"` | `"token"` | `"custom"`
-- `definition.customLabel` / `definition.customMultiplier` - Required when `unit` is `"custom"` (label)
+- `definition.customLabel` / `definition.customMultiplier` - Required when `unit` is `"custom"`
+  (label)
 - `definition.filter` - Which events to include
 - `definition.aggregation` - How to calculate quantity (`count`, `sum`, …)
 - `definition.metadata` - Optional
 
 **Returns:** The meter definition
+
+Polar locks `filter` and `aggregation` after a meter starts aggregating events. `push()` still
+updates name, unit, labels, and metadata. To change the filter or aggregation, define a new `key` (a
+new Polar meter).
 
 ### `store.push()`
 

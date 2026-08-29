@@ -1,6 +1,10 @@
-import { fetchPolarIterator, toCamelCase } from "./utils"
+import { fetchPolarIterator, nonStrictDeepEqual, toCamelCase } from "./utils"
 
-import type { BenefitCreateDefinition, ProductCreateDefinition } from "./types"
+import type {
+  BenefitCreateDefinition,
+  MeterCreateDefinition,
+  ProductCreateDefinition,
+} from "./types"
 import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
 import type { BenefitCreate } from "@polar-sh/sdk/models/components/benefitcreate.js"
 import type { Meter } from "@polar-sh/sdk/models/components/meter.js"
@@ -83,6 +87,16 @@ export function resolveMeter(
     throw new Error(`Unknown meter key '${meterKey}' on ${ownerKind} '${ownerName}'`)
   }
   return meter
+}
+
+export function toMeterUpdatePayload(meter: MeterCreateDefinition, existing: Meter) {
+  const { organizationId: _organizationId, filter, aggregation, ...rest } = meter
+
+  return {
+    ...rest,
+    ...(nonStrictDeepEqual(filter, existing.filter) ? {} : { filter }),
+    ...(nonStrictDeepEqual(aggregation, existing.aggregation) ? {} : { aggregation }),
+  }
 }
 
 export function toBenefitPayload(

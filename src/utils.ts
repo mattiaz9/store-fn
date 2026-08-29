@@ -31,7 +31,7 @@ export function productMatchesProductCreate(product: Product, productCreate: Pro
   return nonStrictDeepEqual(productCreate, product)
 }
 
-function nonStrictDeepEqual(a: unknown, b: unknown): boolean {
+export function nonStrictDeepEqual(a: unknown, b: unknown): boolean {
   if (a instanceof Date && typeof b === "string") {
     return a.toISOString() === b
   }

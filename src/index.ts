@@ -5,6 +5,7 @@ import {
   mapVirtualProduct,
   resolveBenefits,
   toBenefitPayload,
+  toMeterUpdatePayload,
   toProductPayload,
   writeProductsToFile,
 } from "./lib"
@@ -128,7 +129,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
       const upsertedMeter = existingMeter
         ? await polarClient.meters.update({
             id: existingMeter.id,
-            meterUpdate: meterPayload,
+            meterUpdate: toMeterUpdatePayload(meter, existingMeter),
           })
         : await polarClient.meters.create(meterPayload)
 

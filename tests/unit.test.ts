@@ -86,6 +86,7 @@ function createMemoryPolar() {
   const benefits: Benefit[] = []
   const products: Array<Product & { metadata: { key?: string }; prices?: unknown[] }> = []
   const meters: Meter[] = []
+  const meterUpdates: Array<{ id: string; meterUpdate: Partial<Meter> }> = []
   let nextId = 1
 
   const client = {
@@ -107,6 +108,7 @@ function createMemoryPolar() {
       update: ({ id, meterUpdate }: { id: string; meterUpdate: Partial<Meter> }) => {
         const existing = meters.find((meter) => meter.id === id)
         if (!existing) throw new Error(`missing meter ${id}`)
+        meterUpdates.push({ id, meterUpdate })
         Object.assign(existing, meterUpdate)
         return existing
       },
@@ -176,7 +178,7 @@ function createMemoryPolar() {
     },
   }
 
-  return { client: client as unknown as Polar, benefits, products, meters }
+  return { client: client as unknown as Polar, benefits, products, meters, meterUpdates }
 }
 
 describe("toCamelCase", () => {
@@ -1077,6 +1079,78 @@ describe("push meters", () => {
 
     expect(meters.map((meter) => meter.id)).toEqual(["meter_existing", "meter_orphan"])
     expect(meters[0]?.name).toBe("API Invocations")
+  })
+
+  it("omits unchanged filter and aggregation so Polar can update a live meter", async () => {
+    const { client, meters, meterUpdates } = createMemoryPolar()
+    const existing = stubMeter("document-generation", "meter_existing")
+    existing.name = "Document Generation"
+    existing.filter = {
+      conjunction: "and",
+      clauses: [{ property: "name", operator: "eq", value: "document_generation" }],
+    }
+    existing.aggregation = { func: "count" }
+    meters.push(existing)
+
+    const store = createStoreFn({ client, organizationId: "org_test" })
+    store.defineMeter({
+      key: "document-generation",
+      name: "Document generations",
+      unit: "custom",
+      customLabel: "document",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "document_generation" }],
+      },
+      aggregation: { func: "count" },
+    })
+    store.defineProduct({
+      key: "pro-v2",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+    })
+
+    await store.push()
+
+    expect(meterUpdates).toHaveLength(1)
+    expect(meterUpdates[0]?.meterUpdate).not.toHaveProperty("filter")
+    expect(meterUpdates[0]?.meterUpdate).not.toHaveProperty("aggregation")
+    expect(meterUpdates[0]?.meterUpdate.name).toBe("Document generations")
+    expect(meters[0]?.name).toBe("Document generations")
+  })
+
+  it("still sends filter and aggregation when they actually change", async () => {
+    const { client, meters, meterUpdates } = createMemoryPolar()
+    meters.push(stubMeter("invocations", "meter_existing"))
+
+    const store = createStoreFn({ client, organizationId: "org_test" })
+    store.defineMeter({
+      key: "invocations",
+      name: "Invocations",
+      unit: "custom",
+      customLabel: "invocation",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "api_invocation" }],
+      },
+      aggregation: { func: "sum", property: "tokens" },
+    })
+    store.defineProduct({
+      key: "pro",
+      name: "Pro Plan",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+    })
+
+    await store.push()
+
+    expect(meterUpdates[0]?.meterUpdate.filter).toEqual({
+      conjunction: "and",
+      clauses: [{ property: "name", operator: "eq", value: "api_invocation" }],
+    })
+    expect(meterUpdates[0]?.meterUpdate.aggregation).toEqual({
+      func: "sum",
+      property: "tokens",
+    })
   })
 
   it("throws before Polar writes when a benefit references an unknown meter key", async () => {
