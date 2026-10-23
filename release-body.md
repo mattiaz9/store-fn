@@ -1,5 +1,8 @@
 ## Changes
 
-### Fixes
+### Features
 
-- Omit unchanged Polar meter `filter` and `aggregation` on update so `push()` works after a meter starts aggregating events
+- Add optional `typescript.variableName` on products, benefits, and meters
+- Use that name for generated product exports; otherwise keep the camel-cased product name plus
+  `Product`
+- Throw when generated exports share a name or the name is not a valid TypeScript identifier
