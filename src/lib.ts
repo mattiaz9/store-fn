@@ -90,7 +90,13 @@ export function resolveMeter(
 }
 
 export function toMeterUpdatePayload(meter: MeterCreateDefinition, existing: Meter) {
-  const { organizationId: _organizationId, filter, aggregation, ...rest } = meter
+  const {
+    organizationId: _organizationId,
+    filter,
+    aggregation,
+    typescript: _typescript,
+    ...rest
+  } = meter
 
   return {
     ...rest,
@@ -103,14 +109,15 @@ export function toBenefitPayload(
   benefit: BenefitCreateDefinition,
   metersByKey: Map<string, Meter>,
 ): BenefitCreate {
-  if (benefit.type !== "meter_credit") {
-    return benefit
+  const { typescript: _typescript, ...payload } = benefit
+  if (payload.type !== "meter_credit") {
+    return payload
   }
 
-  const meter = resolveMeter("benefit", benefit.description, benefit.properties.meter, metersByKey)
-  const { meter: _meterKey, ...properties } = benefit.properties
+  const meter = resolveMeter("benefit", payload.description, payload.properties.meter, metersByKey)
+  const { meter: _meterKey, ...properties } = payload.properties
   return {
-    ...benefit,
+    ...payload,
     properties: {
       ...properties,
       meterId: meter.id,
@@ -122,7 +129,13 @@ export function toProductPayload(
   product: ProductCreateDefinition,
   metersByKey: Map<string, Meter> = new Map(),
 ) {
-  const { virtual: _virtual, id: _id, benefits: _benefits, ...payload } = product
+  const {
+    virtual: _virtual,
+    id: _id,
+    benefits: _benefits,
+    typescript: _typescript,
+    ...payload
+  } = product
   return {
     ...payload,
     prices: payload.prices.map((price) => {
@@ -147,13 +160,26 @@ export function toProductPayload(
   }
 }
 
+const outputVariableNames = new WeakMap<object, string>()
+
+export function rememberOutputVariableName(entity: object, variableName: string | undefined) {
+  if (variableName === undefined) return
+  outputVariableNames.set(entity, variableName)
+}
+
 export function mapVirtualProduct(
-  { virtual: _virtual, id, benefits: benefitKeys, ...product }: VirtualProductDefinition,
+  {
+    virtual: _virtual,
+    id,
+    benefits: benefitKeys,
+    typescript,
+    ...product
+  }: VirtualProductDefinition,
   benefitsByKey: Map<string, Benefit> = new Map(),
   metersByKey: Map<string, Meter> = new Map(),
 ): Product {
   const productId = id ?? String(product.metadata.key)
-  return {
+  const mapped = {
     ...product,
     id: productId,
     description: product.description ?? "",
@@ -275,15 +301,108 @@ export function mapVirtualProduct(
       }
     }),
   } satisfies Product
+
+  rememberOutputVariableName(mapped, typescript?.variableName)
+  return mapped
 }
 
-function formatProduct(product: Product) {
+const IDENTIFIER_PATTERN = /^[\p{ID_Start}$_][\p{ID_Continue}$_\u200C\u200D]*$/u
+
+const RESERVED_IDENTIFIERS = new Set([
+  "arguments",
+  "await",
+  "break",
+  "case",
+  "catch",
+  "class",
+  "const",
+  "continue",
+  "debugger",
+  "default",
+  "delete",
+  "do",
+  "else",
+  "enum",
+  "eval",
+  "export",
+  "extends",
+  "false",
+  "finally",
+  "for",
+  "function",
+  "if",
+  "implements",
+  "import",
+  "in",
+  "instanceof",
+  "interface",
+  "let",
+  "new",
+  "null",
+  "package",
+  "private",
+  "protected",
+  "public",
+  "return",
+  "static",
+  "super",
+  "switch",
+  "this",
+  "throw",
+  "true",
+  "try",
+  "typeof",
+  "var",
+  "void",
+  "while",
+  "with",
+  "yield",
+])
+
+function productOutputLabel(product: Product): string {
+  const key = product.metadata.key
+  return typeof key === "string" && key.length > 0
+    ? `product '${product.name}' (${key})`
+    : `product '${product.name}'`
+}
+
+function resolveOutputVariableName(product: Product): string {
+  return outputVariableNames.get(product) ?? `${toCamelCase(product.name)}Product`
+}
+
+function assertValidOutputVariableName(variableName: string, label: string) {
+  if (!IDENTIFIER_PATTERN.test(variableName) || RESERVED_IDENTIFIERS.has(variableName)) {
+    throw new Error(`Invalid TypeScript variable name '${variableName}' for ${label}`)
+  }
+}
+
+function outputBindings(products: Product[]) {
+  const bindings = products.map((product) => {
+    const variableName = resolveOutputVariableName(product)
+    const label = productOutputLabel(product)
+    assertValidOutputVariableName(variableName, label)
+    return { product, variableName, label }
+  })
+
+  const seen = new Map<string, string>()
+  for (const { variableName, label } of bindings) {
+    const previous = seen.get(variableName)
+    if (previous) {
+      throw new Error(
+        `Duplicate TypeScript variable name '${variableName}' for ${previous} and ${label}`,
+      )
+    }
+    seen.set(variableName, label)
+  }
+
+  return bindings
+}
+
+function formatProduct(product: Product, variableName: string) {
   const parsedJson = JSON.stringify(product, null, 2)
     // initialize timestmaps
     .replace(/"(\d\d\d\d-\d\d-\d\dT\d\d:\d\d:\d\d.\d\d\dZ)"/g, (val) => `new Date(${val})`)
-  return `export const ${toCamelCase(
-    product.name,
-  )}Product = ${parsedJson} as const satisfies Product`
+  return `export const ${variableName} = ${parsedJson} as const satisfies Product`
 }
 
 export async function writeProductsToFile(products: Product[], path: string) {
@@ -291,10 +410,12 @@ export async function writeProductsToFile(products: Product[], path: string) {
     throw new Error("writeProductsToFile is not supported in the browser")
   }
 
+  const bindings = outputBindings(products)
+
   let storeProductsFileContent = `
 import type { Product } from "@polar-sh/sdk/models/components/product.js"
 
-${products.map(formatProduct).join("\n\n")}
+${bindings.map(({ product, variableName }) => formatProduct(product, variableName)).join("\n\n")}
 `
 
   const writeFile = await import("fs/promises").then((m) => m.writeFile)

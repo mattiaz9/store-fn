@@ -9,6 +9,7 @@ import {
   resolveBenefits,
   resolveMeter,
   toBenefitPayload,
+  toMeterUpdatePayload,
   toProductPayload,
   writeProductsToFile,
 } from "../src/lib.js"
@@ -505,6 +506,20 @@ describe("toBenefitPayload", () => {
     const payload = toBenefitPayload(stored, byKey)
     expect(payload).toEqual(stored)
   })
+
+  it("strips typescript from the Polar payload", () => {
+    const stored = {
+      type: "custom" as const,
+      description: "Priority support",
+      properties: { note: "hi" },
+      metadata: { key: "priority-support" },
+      typescript: { variableName: "prioritySupport" },
+    }
+    const payload = toBenefitPayload(stored, byKey)
+
+    expect(payload).not.toHaveProperty("typescript")
+    expect(payload.description).toBe("Priority support")
+  })
 })
 
 describe("toProductPayload", () => {
@@ -570,6 +585,39 @@ describe("toProductPayload", () => {
       priceCurrency: "usd",
     })
     expect(stored.prices[0]).toEqual({ amountType: "free", priceCurrency: "usd" })
+  })
+
+  it("strips typescript from the Polar payload", () => {
+    const payload = toProductPayload(
+      baseDefinition({
+        name: "Hobby Plan",
+        metadata: { key: "hobby" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+        typescript: { variableName: "hobby" },
+      }),
+    )
+
+    expect(payload).not.toHaveProperty("typescript")
+    expect(payload.name).toBe("Hobby Plan")
+  })
+})
+
+describe("toMeterUpdatePayload", () => {
+  it("strips typescript from the Polar update payload", () => {
+    const existing = stubMeter("invocations")
+    const payload = toMeterUpdatePayload(
+      {
+        name: "Invocations",
+        filter: existing.filter,
+        aggregation: existing.aggregation,
+        metadata: { key: "invocations" },
+        typescript: { variableName: "invocationsMeter" },
+      },
+      existing,
+    )
+
+    expect(payload).not.toHaveProperty("typescript")
+    expect(payload.name).toBe("Invocations")
   })
 })
 
@@ -823,6 +871,149 @@ describe("writeProductsToFile", () => {
     expect(content).toContain(productId)
     expect(content).toContain(priceId)
     expect(content).not.toMatch(/id: "pdfgo_hobby"/)
+  })
+
+  it("uses typescript.variableName as the export and omits it from the file", async () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Hobby Plan",
+        metadata: { key: "pdfgo_hobby" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+        typescript: { variableName: "hobby" },
+      }),
+    )
+
+    expect(product).not.toHaveProperty("typescript")
+
+    const outputPath = join(tempDir, "named-product.ts")
+    await writeProductsToFile([product], outputPath)
+    const content = await readFile(outputPath, "utf-8")
+
+    expect(content).toMatch(/export const hobby =/)
+    expect(content).not.toContain("hobbyPlanProduct")
+    expect(content).not.toContain("variableName")
+  })
+
+  it("keeps a configured name on the product returned by push", async () => {
+    const { client, benefits, meters, products } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+
+    store.defineMeter({
+      key: "invocations",
+      name: "Invocations",
+      unit: "custom",
+      customLabel: "invocation",
+      filter: {
+        conjunction: "and",
+        clauses: [{ property: "name", operator: "eq", value: "invocation" }],
+      },
+      aggregation: { func: "count" },
+      typescript: { variableName: "invocationsMeter" },
+    })
+    store.defineBenefit({
+      key: "priority-support",
+      type: "custom",
+      description: "Priority support",
+      properties: { note: null },
+      typescript: { variableName: "prioritySupport" },
+    })
+    store.defineProduct({
+      key: "hobby",
+      name: "Hobby Plan",
+      prices: [{ amountType: "fixed", priceAmount: 0 }],
+      benefits: ["priority-support"],
+      typescript: { variableName: "hobby" },
+    })
+
+    const result = await store.push()
+
+    expect(meters[0]).not.toHaveProperty("typescript")
+    expect(benefits[0]).not.toHaveProperty("typescript")
+    expect(products[0]).not.toHaveProperty("typescript")
+
+    const outputPath = join(tempDir, "pushed-name.ts")
+    await writeProductsToFile(result.updatedProducts, outputPath)
+    const content = await readFile(outputPath, "utf-8")
+
+    expect(content).toMatch(/export const hobby =/)
+    expect(content).not.toContain("hobbyPlanProduct")
+    expect(content).not.toContain("variableName")
+  })
+
+  it("throws when generated variable names collide", async () => {
+    const first = mapVirtualProduct(
+      baseDefinition({
+        name: "Basic Plan",
+        metadata: { key: "basic" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+      }),
+    )
+    const second = mapVirtualProduct(
+      baseDefinition({
+        name: "basic-plan",
+        metadata: { key: "basic-dashed" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+      }),
+    )
+    const outputPath = join(tempDir, "duplicate-names.ts")
+
+    await expect(writeProductsToFile([first, second], outputPath)).rejects.toThrow(
+      "Duplicate TypeScript variable name 'basicPlanProduct' for product 'Basic Plan' (basic) and product 'basic-plan' (basic-dashed)",
+    )
+    await expect(readFile(outputPath, "utf-8")).rejects.toThrow()
+  })
+
+  it("throws when an explicit variable name collides with a generated one", async () => {
+    const first = mapVirtualProduct(
+      baseDefinition({
+        name: "Other Plan",
+        metadata: { key: "other" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+        typescript: { variableName: "basicPlanProduct" },
+      }),
+    )
+    const second = mapVirtualProduct(
+      baseDefinition({
+        name: "Basic Plan",
+        metadata: { key: "basic" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+      }),
+    )
+
+    await expect(
+      writeProductsToFile([first, second], join(tempDir, "duplicate-explicit.ts")),
+    ).rejects.toThrow("Duplicate TypeScript variable name 'basicPlanProduct'")
+  })
+
+  it("throws when typescript.variableName is not a valid identifier", async () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Hobby Plan",
+        metadata: { key: "hobby" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+        typescript: { variableName: "not-a-name" },
+      }),
+    )
+
+    await expect(writeProductsToFile([product], join(tempDir, "invalid-name.ts"))).rejects.toThrow(
+      "Invalid TypeScript variable name 'not-a-name' for product 'Hobby Plan' (hobby)",
+    )
+  })
+
+  it("throws when a generated variable name is not a valid identifier", async () => {
+    const product = mapVirtualProduct(
+      baseDefinition({
+        name: "Basic Plan!",
+        metadata: { key: "basic" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+      }),
+    )
+
+    await expect(
+      writeProductsToFile([product], join(tempDir, "invalid-generated.ts")),
+    ).rejects.toThrow(
+      "Invalid TypeScript variable name 'basicPlan!Product' for product 'Basic Plan!' (basic)",
+    )
   })
 })
 

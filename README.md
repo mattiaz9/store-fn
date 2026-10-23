@@ -90,6 +90,9 @@ Defines a product. Products are identified by their `key` in metadata.
 **Parameters:**
 
 - `definition.key` - Unique identifier for the product (stored in metadata)
+- `definition.typescript.variableName` - Optional exact `const` name in the generated TypeScript
+  file. When omitted, the export is the camel-cased product name plus `Product` (`"Basic Plan"`
+  becomes `basicPlanProduct`). Not sent to Polar
 - `definition.name` - Product name
 - `definition.description` - Product description
 - `definition.recurringInterval` - Optional: `"month"` | `"year"` | `"week"` | `"day"`
@@ -111,6 +114,8 @@ Defines a benefit. Benefits are identified by their `key` in metadata.
 **Parameters:**
 
 - `definition.key` - Unique identifier (stored in metadata)
+- `definition.typescript.variableName` - Optional exact `const` name when this benefit is emitted in
+  the generated TypeScript file. Not sent to Polar
 - `definition.type` - Polar benefit type
 - `definition.description` - Shown on products that grant the benefit
 - `definition.properties` - Polar type-specific properties. For `meter_credit`, use
@@ -127,6 +132,8 @@ Defines a meter. Meters are identified by their `key` in metadata.
 **Parameters:**
 
 - `definition.key` - Unique identifier (stored in metadata)
+- `definition.typescript.variableName` - Optional exact `const` name when this meter is emitted in
+  the generated TypeScript file. Not sent to Polar
 - `definition.name` - Shown on invoices and usage
 - `definition.unit` - Optional: `"scalar"` | `"token"` | `"custom"`
 - `definition.customLabel` / `definition.customMultiplier` - Required when `unit` is `"custom"`
@@ -485,7 +492,10 @@ This command will:
 
 ### Generated Products File
 
-After running `push`, you'll get a TypeScript file with all your products:
+After running `push`, you'll get a TypeScript file with all your products. Each export is named from
+the product's display name: `"Basic Plan"` becomes `basicPlanProduct`. Set `typescript.variableName`
+on `defineProduct` to choose the exact name instead. Generation throws if two exports would use the
+same name, or if a name is not a valid TypeScript identifier.
 
 ```ts
 // products.ts (generated)

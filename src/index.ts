@@ -3,6 +3,7 @@ import pc from "picocolors"
 import {
   downloadStoreFromCloud,
   mapVirtualProduct,
+  rememberOutputVariableName,
   resolveBenefits,
   toBenefitPayload,
   toMeterUpdatePayload,
@@ -19,6 +20,7 @@ import type {
   ProductCreateDefinition,
   ProductDefinition,
   StoreMetadata,
+  TypescriptOutputConfig,
 } from "./types"
 import type { Polar } from "@polar-sh/sdk"
 import type { Benefit } from "@polar-sh/sdk/models/components/benefit.js"
@@ -124,7 +126,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
       const existingMeter = polarStore.meters.find(
         (item) => item.metadata.key === meter.metadata.key,
       )
-      const { organizationId: _organizationId, ...meterPayload } = meter
+      const { organizationId: _organizationId, typescript: _typescript, ...meterPayload } = meter
 
       const upsertedMeter = existingMeter
         ? await polarClient.meters.update({
@@ -226,6 +228,7 @@ function createStoreFn(options: CreateStoreFnOptions) {
           benefits: attached.map((benefit) => benefit.id),
         },
       })
+      rememberOutputVariableName(productWithBenefits, product.typescript?.variableName)
       updatedProducts.push(productWithBenefits)
     }
 
@@ -251,5 +254,6 @@ export type {
   ProductCreateDefinition,
   ProductDefinition,
   StoreMetadata,
+  TypescriptOutputConfig,
 }
 export { createStoreFn, writeProductsToFile }

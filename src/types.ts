@@ -11,6 +11,12 @@ import type { ProductPriceSeatBasedCreate } from "@polar-sh/sdk/models/component
 
 export type StoreMetadata = { [k: string]: string | number | boolean }
 
+/** Store-fn-only output settings. Stripped before any Polar request. */
+export type TypescriptOutputConfig = {
+  /** Exact `const` name when this record is emitted in the generated TypeScript file. */
+  variableName?: string
+}
+
 export type MeteredPriceDefinition = Omit<ProductPriceMeteredUnitCreate, "meterId"> & {
   meter: string
 }
@@ -54,13 +60,20 @@ export type ProductDefinition<TMeta extends StoreMetadata = StoreMetadata> = (
   | WithStoreFields<ProductCreateOneTime, TMeta>
 ) & {
   key: string
+  typescript?: TypescriptOutputConfig
 }
 
-export type ProductCreateDefinition<TMeta extends StoreMetadata = StoreMetadata> =
+export type ProductCreateDefinition<TMeta extends StoreMetadata = StoreMetadata> = (
   | WithRequiredStoreMetadata<ProductCreateRecurring, TMeta>
   | WithRequiredStoreMetadata<ProductCreateOneTime, TMeta>
+) & {
+  typescript?: TypescriptOutputConfig
+}
 
-export type MeterCreditPropertiesDefinition = Omit<BenefitMeterCreditCreateProperties, "meterId"> & {
+export type MeterCreditPropertiesDefinition = Omit<
+  BenefitMeterCreditCreateProperties,
+  "meterId"
+> & {
   meter: string
 }
 
@@ -68,7 +81,9 @@ type BenefitMeterCreditDefinition = Omit<BenefitMeterCreditCreate, "metadata" | 
   properties: MeterCreditPropertiesDefinition
 }
 
-type StoreBenefitCreate = Exclude<BenefitCreate, BenefitMeterCreditCreate> | BenefitMeterCreditDefinition
+type StoreBenefitCreate =
+  | Exclude<BenefitCreate, BenefitMeterCreditCreate>
+  | BenefitMeterCreditDefinition
 
 type WithBenefitFields<T, TMeta extends StoreMetadata> = T extends unknown
   ? Omit<T, "metadata"> & { metadata?: TMeta }
@@ -78,13 +93,18 @@ type WithRequiredBenefitMetadata<T, TMeta extends StoreMetadata> = T extends unk
   ? Omit<T, "metadata"> & { metadata: TMeta & { key: string } }
   : never
 
-export type BenefitDefinition<TMeta extends StoreMetadata = StoreMetadata> =
-  WithBenefitFields<StoreBenefitCreate, TMeta> & {
-    key: string
-  }
+export type BenefitDefinition<TMeta extends StoreMetadata = StoreMetadata> = WithBenefitFields<
+  StoreBenefitCreate,
+  TMeta
+> & {
+  key: string
+  typescript?: TypescriptOutputConfig
+}
 
 export type BenefitCreateDefinition<TMeta extends StoreMetadata = StoreMetadata> =
-  WithRequiredBenefitMetadata<StoreBenefitCreate, TMeta>
+  WithRequiredBenefitMetadata<StoreBenefitCreate, TMeta> & {
+    typescript?: TypescriptOutputConfig
+  }
 
 type WithMeterFields<T, TMeta extends StoreMetadata> = Omit<T, "metadata"> & {
   metadata?: TMeta
@@ -99,7 +119,10 @@ export type MeterDefinition<TMeta extends StoreMetadata = StoreMetadata> = WithM
   TMeta
 > & {
   key: string
+  typescript?: TypescriptOutputConfig
 }
 
 export type MeterCreateDefinition<TMeta extends StoreMetadata = StoreMetadata> =
-  WithRequiredMeterMetadata<MeterCreate, TMeta>
+  WithRequiredMeterMetadata<MeterCreate, TMeta> & {
+    typescript?: TypescriptOutputConfig
+  }
