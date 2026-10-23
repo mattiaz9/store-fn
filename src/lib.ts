@@ -160,11 +160,29 @@ export function toProductPayload(
   }
 }
 
-const outputVariableNames = new WeakMap<object, string>()
+export const outputVariableNameKey = Symbol.for("store-fn.outputVariableName")
 
-export function rememberOutputVariableName(entity: object, variableName: string | undefined) {
-  if (variableName === undefined) return
-  outputVariableNames.set(entity, variableName)
+export function rememberOutputVariableName<T extends object>(
+  entity: T,
+  variableName: string | undefined,
+): T {
+  if (variableName === undefined) return entity
+  try {
+    Object.defineProperty(entity, outputVariableNameKey, {
+      value: variableName,
+      enumerable: false,
+      configurable: true,
+    })
+    return entity
+  } catch {
+    const copy = { ...entity }
+    Object.defineProperty(copy, outputVariableNameKey, {
+      value: variableName,
+      enumerable: false,
+      configurable: true,
+    })
+    return copy
+  }
 }
 
 export function mapVirtualProduct(
@@ -302,8 +320,7 @@ export function mapVirtualProduct(
     }),
   } satisfies Product
 
-  rememberOutputVariableName(mapped, typescript?.variableName)
-  return mapped
+  return rememberOutputVariableName(mapped, typescript?.variableName)
 }
 
 const IDENTIFIER_PATTERN = /^[\p{ID_Start}$_][\p{ID_Continue}$_\u200C\u200D]*$/u
@@ -367,7 +384,11 @@ function productOutputLabel(product: Product): string {
 }
 
 function resolveOutputVariableName(product: Product): string {
-  return outputVariableNames.get(product) ?? `${toCamelCase(product.name)}Product`
+  const configured = (product as Product & { [outputVariableNameKey]?: unknown })[
+    outputVariableNameKey
+  ]
+  if (typeof configured === "string") return configured
+  return `${toCamelCase(product.name)}Product`
 }
 
 function assertValidOutputVariableName(variableName: string, label: string) {

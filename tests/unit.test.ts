@@ -963,6 +963,69 @@ describe("writeProductsToFile", () => {
     await expect(readFile(outputPath, "utf-8")).rejects.toThrow()
   })
 
+  it("keeps distinct configured names when display names match", async () => {
+    const month = mapVirtualProduct(
+      baseDefinition({
+        name: "Startup",
+        metadata: { key: "ingext_startup_month" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+      }),
+    )
+    const year = mapVirtualProduct(
+      baseDefinition({
+        name: "Startup",
+        metadata: { key: "ingext_startup_year" },
+        prices: [{ amountType: "fixed", priceAmount: 0, priceCurrency: "usd" }],
+      }),
+    )
+    const monthCopy = { ...month }
+    const yearCopy = { ...year }
+    const outputVariableNameKey = Symbol.for("store-fn.outputVariableName")
+    Object.defineProperty(monthCopy, outputVariableNameKey, {
+      value: "startupMonthProduct",
+      enumerable: false,
+    })
+    Object.defineProperty(yearCopy, outputVariableNameKey, {
+      value: "startupYearProduct",
+      enumerable: false,
+    })
+
+    const outputPath = join(tempDir, "startup-intervals.ts")
+    await writeProductsToFile([monthCopy, yearCopy], outputPath)
+    const content = await readFile(outputPath, "utf-8")
+
+    expect(content).toMatch(/export const startupMonthProduct =/)
+    expect(content).toMatch(/export const startupYearProduct =/)
+    expect(content).not.toContain("startupProduct")
+  })
+
+  it("keeps distinct typescript names from push when display names match", async () => {
+    const { client } = createMemoryPolar()
+    const store = createStoreFn({ client, organizationId: "org_test" })
+    store.defineProduct({
+      key: "ingext_startup_month",
+      name: "Startup",
+      recurringInterval: "month",
+      prices: [{ amountType: "fixed", priceAmount: 10 }],
+      typescript: { variableName: "startupMonthProduct" },
+    })
+    store.defineProduct({
+      key: "ingext_startup_year",
+      name: "Startup",
+      recurringInterval: "year",
+      prices: [{ amountType: "fixed", priceAmount: 100 }],
+      typescript: { variableName: "startupYearProduct" },
+    })
+
+    const result = await store.push()
+    const outputPath = join(tempDir, "startup-push.ts")
+    await writeProductsToFile(result.updatedProducts, outputPath)
+    const content = await readFile(outputPath, "utf-8")
+
+    expect(content).toMatch(/export const startupMonthProduct =/)
+    expect(content).toMatch(/export const startupYearProduct =/)
+  })
+
   it("throws when an explicit variable name collides with a generated one", async () => {
     const first = mapVirtualProduct(
       baseDefinition({

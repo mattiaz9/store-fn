@@ -228,8 +228,9 @@ function createStoreFn(options: CreateStoreFnOptions) {
           benefits: attached.map((benefit) => benefit.id),
         },
       })
-      rememberOutputVariableName(productWithBenefits, product.typescript?.variableName)
-      updatedProducts.push(productWithBenefits)
+      updatedProducts.push(
+        rememberOutputVariableName(productWithBenefits, product.typescript?.variableName),
+      )
     }
 
     // @ts-expect-error -- clear client after sync completes
